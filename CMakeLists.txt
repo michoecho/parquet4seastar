@@ -28,8 +28,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 find_package (Seastar REQUIRED)
+find_package (Thrift 0.11.0 REQUIRED)
 
 add_library (parquet4seastar STATIC
+    include/parquet4seastar/parquet_types.h
+    src/parquet_types.cpp
 )
 
 target_compile_options(parquet4seastar PRIVATE
@@ -42,6 +45,7 @@ target_compile_options(parquet4seastar PRIVATE
 
 target_link_libraries(parquet4seastar
     Seastar::seastar
+    Thrift::thrift
 )
 
 target_include_directories (parquet4seastar
