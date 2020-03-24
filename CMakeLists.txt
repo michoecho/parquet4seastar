@@ -40,6 +40,7 @@ add_library (parquet4seastar STATIC
     include/parquet4seastar/compression.hh
     include/parquet4seastar/exception.hh
     include/parquet4seastar/encoding.hh
+    include/parquet4seastar/file_reader.hh
     include/parquet4seastar/logical_type.hh
     include/parquet4seastar/overloaded.hh
     include/parquet4seastar/parquet_types.h
@@ -50,6 +51,7 @@ add_library (parquet4seastar STATIC
     src/column_chunk_reader.cc
     src/compression.cc
     src/encoding.cc
+    src/file_reader.cc
     src/logical_type.cc
     src/parquet_types.cpp
     src/reader_schema.cc
