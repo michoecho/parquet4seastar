@@ -26,13 +26,25 @@
 
 #pragma once
 
-#include "arrow/util/logging.h"
-#include "arrow/util/ubsan.h"
+#include <type_traits>
+#include <cassert>
+#include <cstring>
+
 #if defined(__AVX512F__)
 #include <immintrin.h>
 #endif
 
-namespace arrow {
+namespace parquet4seastar {
+
+namespace util {
+template <typename T>
+inline typename std::enable_if_t<std::is_trivial<T>::value, T> SafeLoad(const T* unaligned) {
+  std::remove_const_t<T> ret;
+  std::memcpy(&ret, unaligned, sizeof(T));
+  return ret;
+}
+}
+
 namespace internal {
 
 #if defined(__AVX512F__)
@@ -3854,11 +3866,11 @@ inline int unpack32(const uint32_t* in, uint32_t* out, int batch_size, int num_b
       for (int i = 0; i < num_loops; ++i) in = unpack32_32(in, out + i * 32);
       break;
     default:
-      DCHECK(false) << "Unsupported num_bits";
+      assert(false && "Unsupported num_bits");
   }
 
   return batch_size;
 }
 
 }  // namespace internal
-}  // namespace arrow
+}  // namespace parquet4seastar

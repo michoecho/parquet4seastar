@@ -31,7 +31,10 @@ find_package (Seastar REQUIRED)
 find_package (Thrift 0.11.0 REQUIRED)
 
 add_library (parquet4seastar STATIC
+    include/parquet4seastar/bit_stream_utils.hh
+    include/parquet4seastar/bpacking.hh
     include/parquet4seastar/parquet_types.h
+    include/parquet4seastar/rle_encoding.hh
     src/parquet_types.cpp
 )
 

@@ -87,3 +87,7 @@ function (seastar_add_test name)
     NAME ${name}
     COMMAND ${CMAKE_COMMAND} --build ${PROJECT_BINARY_DIR} --target ${target})
 endfunction ()
+
+seastar_add_test (rle_encoding
+  KIND BOOST
+  SOURCES rle_encoding_test.cc)

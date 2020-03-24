@@ -23,13 +23,24 @@
 #include <algorithm>
 #include <cstdint>
 
-#include "arrow/util/bit_util.h"
-#include "arrow/util/bpacking.h"
-#include "arrow/util/logging.h"
-#include "arrow/util/macros.h"
+#include <parquet4seastar/bpacking.hh>
 
-namespace arrow {
-namespace BitUtil {
+namespace parquet4seastar::BitUtil {
+
+// Return the number of bytes needed to fit the given number of bits
+constexpr int64_t BytesForBits(int64_t bits) {
+  // This formula avoids integer overflow on very large `bits`
+  return (bits >> 3) + ((bits & 7) != 0);
+}
+
+// Returns the 'num_bits' least-significant bits of 'v'.
+static inline uint64_t TrailingBits(uint64_t v, int num_bits) {
+  if (__builtin_expect(num_bits == 0, false)) return 0;
+  if (__builtin_expect(num_bits >= 64, false)) return v;
+  int n = 64 - num_bits;
+  return (v << n) >> n;
+}
+
 
 /// Utility class to write bit/byte streams.  This class can write data to either be
 /// bit packed or byte aligned (and a single stream that has a mix of both).
@@ -174,16 +185,16 @@ class BitReader {
 
 inline bool BitWriter::PutValue(uint64_t v, int num_bits) {
   // TODO: revisit this limit if necessary (can be raised to 64 by fixing some edge cases)
-  DCHECK_LE(num_bits, 32);
-  DCHECK_EQ(v >> num_bits, 0) << "v = " << v << ", num_bits = " << num_bits;
+  assert(num_bits <= 32);
+  assert(v >> num_bits == 0);
 
-  if (ARROW_PREDICT_FALSE(byte_offset_ * 8 + bit_offset_ + num_bits > max_bytes_ * 8))
+  if (__builtin_expect(byte_offset_ * 8 + bit_offset_ + num_bits > max_bytes_ * 8, true))
     return false;
 
   buffered_values_ |= v << bit_offset_;
   bit_offset_ += num_bits;
 
-  if (ARROW_PREDICT_FALSE(bit_offset_ >= 64)) {
+  if (__builtin_expect(bit_offset_ >= 64, false)) {
     // Flush buffered_values_ and write out bits of v that did not fit
     memcpy(buffer_ + byte_offset_, &buffered_values_, 8);
     buffered_values_ = 0;
@@ -191,13 +202,13 @@ inline bool BitWriter::PutValue(uint64_t v, int num_bits) {
     bit_offset_ -= 64;
     buffered_values_ = v >> (num_bits - bit_offset_);
   }
-  DCHECK_LT(bit_offset_, 64);
+  assert(bit_offset_ <= 64);
   return true;
 }
 
 inline void BitWriter::Flush(bool align) {
   int num_bytes = static_cast<int>(BitUtil::BytesForBits(bit_offset_));
-  DCHECK_LE(byte_offset_ + num_bytes, max_bytes_);
+  assert(byte_offset_ + num_bytes <= max_bytes_);
   memcpy(buffer_ + byte_offset_, &buffered_values_, num_bytes);
 
   if (align) {
@@ -209,7 +220,7 @@ inline void BitWriter::Flush(bool align) {
 
 inline uint8_t* BitWriter::GetNextBytePtr(int num_bytes) {
   Flush(/* align */ true);
-  DCHECK_LE(byte_offset_, max_bytes_);
+  assert(byte_offset_ <= max_bytes_);
   if (byte_offset_ + num_bytes > max_bytes_) return NULL;
   uint8_t* ptr = buffer_ + byte_offset_;
   byte_offset_ += num_bytes;
@@ -244,7 +255,7 @@ inline void GetValue_(int num_bits, T* v, int max_bytes, const uint8_t* buffer,
     *bit_offset -= 64;
 
     int bytes_remaining = max_bytes - *byte_offset;
-    if (ARROW_PREDICT_TRUE(bytes_remaining >= 8)) {
+    if (__builtin_expect(bytes_remaining >= 8, true)) {
       memcpy(buffered_values, buffer + *byte_offset, 8);
     } else {
       memcpy(buffered_values, buffer + *byte_offset, bytes_remaining);
@@ -259,7 +270,7 @@ inline void GetValue_(int num_bits, T* v, int max_bytes, const uint8_t* buffer,
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
-    DCHECK_LE(*bit_offset, 64);
+    assert(*bit_offset <= 64);
   }
 }
 
@@ -272,10 +283,10 @@ inline bool BitReader::GetValue(int num_bits, T* v) {
 
 template <typename T>
 inline int BitReader::GetBatch(int num_bits, T* v, int batch_size) {
-  DCHECK(buffer_ != NULL);
+  assert(buffer_ != NULL);
   // TODO: revisit this limit if necessary
-  DCHECK_LE(num_bits, 32);
-  DCHECK_LE(num_bits, static_cast<int>(sizeof(T) * 8));
+  assert(num_bits <= 32);
+  assert(num_bits <= static_cast<int>(sizeof(T) * 8));
 
   int bit_offset = bit_offset_;
   int byte_offset = byte_offset_;
@@ -290,7 +301,7 @@ inline int BitReader::GetBatch(int num_bits, T* v, int batch_size) {
   }
 
   int i = 0;
-  if (ARROW_PREDICT_FALSE(bit_offset != 0)) {
+  if (__builtin_expect(bit_offset != 0, false)) {
     for (; i < batch_size && bit_offset != 0; ++i) {
       detail::GetValue_(num_bits, &v[i], max_bytes, buffer, &bit_offset, &byte_offset,
                         &buffered_values);
@@ -350,12 +361,12 @@ inline int BitReader::GetBatch(int num_bits, T* v, int batch_size) {
 
 template <typename T>
 inline bool BitReader::GetAligned(int num_bytes, T* v) {
-  if (ARROW_PREDICT_FALSE(num_bytes > static_cast<int>(sizeof(T)))) {
+  if (__builtin_expect(num_bytes > static_cast<int>(sizeof(T)), false)) {
     return false;
   }
 
   int bytes_read = static_cast<int>(BitUtil::BytesForBits(bit_offset_));
-  if (ARROW_PREDICT_FALSE(byte_offset_ + bytes_read + num_bytes > max_bytes_)) {
+  if (__builtin_expect(byte_offset_ + bytes_read + num_bytes > max_bytes_, false)) {
     return false;
   }
 
@@ -367,7 +378,7 @@ inline bool BitReader::GetAligned(int num_bytes, T* v) {
   // Reset buffered_values_
   bit_offset_ = 0;
   int bytes_remaining = max_bytes_ - byte_offset_;
-  if (ARROW_PREDICT_TRUE(bytes_remaining >= 8)) {
+  if (__builtin_expect(bytes_remaining >= 8, true)) {
     memcpy(&buffered_values_, buffer_ + byte_offset_, 8);
   } else {
     memcpy(&buffered_values_, buffer_ + byte_offset_, bytes_remaining);
@@ -390,7 +401,7 @@ inline bool BitReader::GetVlqInt(uint32_t* v) {
 
   for (int i = 0; i < kMaxVlqByteLength; i++) {
     uint8_t byte = 0;
-    if (ARROW_PREDICT_FALSE(!GetAligned<uint8_t>(1, &byte))) {
+    if (__builtin_expect(!GetAligned<uint8_t>(1, &byte), false)) {
       return false;
     }
     tmp |= static_cast<uint32_t>(byte & 0x7F) << (7 * i);
@@ -405,16 +416,15 @@ inline bool BitReader::GetVlqInt(uint32_t* v) {
 }
 
 inline bool BitWriter::PutZigZagVlqInt(int32_t v) {
-  auto u_v = ::arrow::util::SafeCopy<uint32_t>(v);
-  return PutVlqInt((u_v << 1) ^ (u_v >> 31));
+  auto u_v = static_cast<uint32_t>(v);
+  return PutVlqInt((u_v << 1) ^ (v >> 31));
 }
 
 inline bool BitReader::GetZigZagVlqInt(int32_t* v) {
   uint32_t u;
   if (!GetVlqInt(&u)) return false;
-  *v = ::arrow::util::SafeCopy<int32_t>((u >> 1) ^ (u << 31));
+  *v = (u >> 1) ^ -(static_cast<int32_t>(u & 1));
   return true;
 }
 
-}  // namespace BitUtil
-}  // namespace arrow
+} // namespace parquet4seastar::BitUtil
