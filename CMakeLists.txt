@@ -87,3 +87,4 @@ target_include_directories (parquet4seastar
 
 enable_testing ()
 add_subdirectory (tests)
+add_subdirectory (apps)
