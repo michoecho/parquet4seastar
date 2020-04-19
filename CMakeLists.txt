@@ -43,6 +43,7 @@ add_library (parquet4seastar STATIC
     include/parquet4seastar/exception.hh
     include/parquet4seastar/encoding.hh
     include/parquet4seastar/file_reader.hh
+    include/parquet4seastar/file_writer.hh
     include/parquet4seastar/logical_type.hh
     include/parquet4seastar/overloaded.hh
     include/parquet4seastar/parquet_types.h
