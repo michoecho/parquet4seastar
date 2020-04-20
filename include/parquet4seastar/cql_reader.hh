@@ -25,5 +25,11 @@
 #include <ostream>
 
 namespace parquet4seastar::cql {
-seastar::future<> parquet_to_cql(file_reader& fr, const std::string& table, const std::string& pk, std::ostream& out);
+
+seastar::future<> parquet_to_cql(
+        file_reader& fr,
+        const std::string& table,
+        const std::string& pk,
+        std::ostream& out);
+
 } // namespace parquet4seastar::cql

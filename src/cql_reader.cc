@@ -22,6 +22,7 @@
 #include <parquet4seastar/record_reader.hh>
 #include <parquet4seastar/cql_reader.hh>
 #include <parquet4seastar/overloaded.hh>
+#include <parquet4seastar/y_combinator.hh>
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <iomanip>
