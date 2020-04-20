@@ -103,3 +103,7 @@ seastar_add_test (thrift_serdes_test
 seastar_add_test (cql_reader_alltypes
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test_data/alltypes/
   SOURCES cql_reader_alltypes_test.cc)
+
+seastar_add_test (cql_reader
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test_data/parquet-testing/
+  SOURCES cql_reader_test.cc)
