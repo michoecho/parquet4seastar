@@ -91,3 +91,8 @@ endfunction ()
 seastar_add_test (rle_encoding
   KIND BOOST
   SOURCES rle_encoding_test.cc)
+
+seastar_add_test (compression
+  KIND BOOST
+  SOURCES compression_test.cc)
+

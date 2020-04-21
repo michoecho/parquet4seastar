@@ -28,17 +28,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 find_package (Seastar REQUIRED)
+find_package (Snappy REQUIRED)
+find_package (ZLIB REQUIRED)
 find_package (Thrift 0.11.0 REQUIRED)
 
 add_library (parquet4seastar STATIC
     include/parquet4seastar/bit_stream_utils.hh
     include/parquet4seastar/bpacking.hh
     include/parquet4seastar/bytes.hh
+    include/parquet4seastar/compression.hh
     include/parquet4seastar/exception.hh
     include/parquet4seastar/overloaded.hh
     include/parquet4seastar/parquet_types.h
     include/parquet4seastar/rle_encoding.hh
     include/parquet4seastar/y_combinator.hh
+    src/compression.cc
     src/parquet_types.cpp
 )
 
@@ -53,6 +57,8 @@ target_compile_options(parquet4seastar PRIVATE
 target_link_libraries(parquet4seastar
     Seastar::seastar
     Thrift::thrift
+    ZLIB::ZLIB
+    Snappy::snappy
 )
 
 target_include_directories (parquet4seastar
