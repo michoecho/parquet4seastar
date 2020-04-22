@@ -32,6 +32,10 @@
 
 namespace parquet4seastar {
 
+constexpr inline uint32_t bit_width(uint32_t max_n) {
+    return (max_n == 0) ? 0 : seastar::log2floor(max_n) + 1;
+}
+
 /* There are two encodings used for definition and repetition levels: RLE and BIT_PACKED.
  * level_decoder provides a common interface to them.
  */
@@ -258,5 +262,65 @@ extern template class value_decoder<format::Type::DOUBLE>;
 extern template class value_decoder<format::Type::BOOLEAN>;
 extern template class value_decoder<format::Type::BYTE_ARRAY>;
 extern template class value_decoder<format::Type::FIXED_LEN_BYTE_ARRAY>;
+
+template <format::Type::type ParquetType>
+class value_encoder {
+public:
+    struct flush_result {
+        size_t size;
+        format::Encoding::type encoding;
+    };
+    using input_type = typename value_decoder_traits<ParquetType>::input_type;
+    virtual void put_batch(const input_type data[], size_t size) = 0;
+    virtual size_t max_encoded_size() const = 0;
+    virtual flush_result flush(byte sink[]) = 0;
+    virtual std::optional<bytes_view> view_dict() { return {}; };
+    virtual uint64_t cardinality() { return 0; }
+    virtual ~value_encoder() = default;
+};
+
+template <format::Type::type ParquetType>
+std::unique_ptr<value_encoder<ParquetType>>
+make_value_encoder(format::Encoding::type encoding);
+
+class rle_builder {
+    size_t _buffer_offset = 0;
+    bytes _buffer;
+    uint32_t _bit_width;
+    RleEncoder _encoder;
+public:
+    rle_builder(uint32_t bit_width)
+            : _buffer(RleEncoder::MinBufferSize(bit_width), 0)
+            , _bit_width{bit_width}
+            , _encoder{_buffer.data(), static_cast<int>(_buffer.size()), static_cast<int>(_bit_width)}
+    {};
+    void put(uint64_t value) {
+        while (!_encoder.Put(value)) {
+            _encoder.Flush();
+            _buffer_offset += _encoder.len();
+            _buffer.resize(_buffer.size() * 2);
+            _encoder = RleEncoder{
+                    _buffer.data() + _buffer_offset,
+                    static_cast<int>(_buffer.size() - _buffer_offset),
+                    static_cast<int>(_bit_width)};
+        }
+    }
+    void put_batch(const uint64_t data[], size_t size) {
+        for (size_t i = 0; i < size; ++i) {
+            put(data[i]);
+        }
+    }
+    void clear() {
+        _buffer.clear();
+        _buffer.resize(RleEncoder::MinBufferSize(_bit_width));
+        _buffer_offset = 0;
+        _encoder = RleEncoder{_buffer.data(), static_cast<int>(_buffer.size()), static_cast<int>(_bit_width)};
+    }
+    bytes_view view() {
+        _encoder.Flush();
+        return {_buffer.data(), _buffer_offset + _encoder.len()};
+    }
+    size_t max_encoded_size() const { return _buffer.size(); }
+};
 
 } // namespace parquet4seastar

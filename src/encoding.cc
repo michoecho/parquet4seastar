@@ -339,4 +339,300 @@ template class value_decoder<format::Type::BOOLEAN>;
 template class value_decoder<format::Type::BYTE_ARRAY>;
 template class value_decoder<format::Type::FIXED_LEN_BYTE_ARRAY>;
 
+template <format::Type::type ParquetType>
+class plain_encoder : public value_encoder<ParquetType> {
+public:
+    using typename value_encoder<ParquetType>::input_type;
+    using typename value_encoder<ParquetType>::flush_result;
+private:
+    std::vector<input_type> _buf;
+public:
+    bytes_view view() const {
+        const byte* data = reinterpret_cast<const byte*>(_buf.data());
+        size_t size = _buf.size() * sizeof(input_type);
+        return {data, size};
+    }
+    void put_batch(const input_type data[], size_t size) override {
+        _buf.insert(_buf.end(), data, data + size);
+    }
+    size_t max_encoded_size() const override { return view().size(); }
+    flush_result flush(byte sink[]) override {
+        bytes_view v = view();
+        std::copy(v.begin(), v.end(), sink);
+        _buf.clear();
+        return {v.size(), format::Encoding::PLAIN};
+    }
+    std::optional<bytes_view> view_dict() override { return {}; }
+    uint64_t cardinality() override { return 0; }
+};
+
+template <>
+class plain_encoder<format::Type::BYTE_ARRAY>
+        : public value_encoder<format::Type::BYTE_ARRAY> {
+public:
+    using typename value_encoder<format::Type::BYTE_ARRAY>::input_type;
+    using typename value_encoder<format::Type::BYTE_ARRAY>::flush_result;
+private:
+    bytes _buf;
+private:
+    void put(const input_type& str) {
+        append_raw_bytes<uint32_t>(_buf, str.size());
+        _buf.insert(_buf.end(), str.begin(), str.end());
+    }
+public:
+    bytes_view view() const {
+        return {_buf.data(), _buf.size()};
+    }
+    void put_batch(const input_type data[], size_t size) override {
+        for (size_t i = 0; i < size; ++i) {
+            put(data[i]);
+        }
+    }
+    size_t max_encoded_size() const override { return _buf.size(); }
+    flush_result flush(byte sink[]) override {
+        std::copy(_buf.begin(), _buf.end(), sink);
+        size_t size = _buf.size();
+        _buf.clear();
+        return {size, format::Encoding::PLAIN};
+    }
+    std::optional<bytes_view> view_dict() override { return {}; }
+    uint64_t cardinality() override { return 0; }
+};
+
+template <>
+class plain_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>
+        : public value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY> {
+public:
+    using typename value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>::input_type;
+    using typename value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>::flush_result;
+private:
+    bytes _buf;
+private:
+    void put(const input_type& str) {
+        _buf.insert(_buf.end(), str.begin(), str.end());
+    }
+public:
+    bytes_view view() const {
+        return {_buf.data(), _buf.size()};
+    }
+    void put_batch(const input_type data[], size_t size) override {
+        for (size_t i = 0; i < size; ++i) {
+            put(data[i]);
+        }
+    }
+    size_t max_encoded_size() const override { return _buf.size(); }
+    flush_result flush(byte sink[]) override {
+        std::copy(_buf.begin(), _buf.end(), sink);
+        size_t size = _buf.size();
+        _buf.clear();
+        return {size, format::Encoding::PLAIN};
+    }
+    std::optional<bytes_view> view_dict() override { return {}; }
+    uint64_t cardinality() override { return 0; }
+};
+
+template <format::Type::type ParquetType>
+class dict_builder {
+public:
+    using input_type = typename value_decoder_traits<ParquetType>::input_type;
+private:
+    std::unordered_map<input_type, uint32_t> _accumulator;
+    plain_encoder<ParquetType> _dict;
+public:
+    uint32_t put(input_type key) {
+        auto [iter, was_new_key] = _accumulator.try_emplace(key, _accumulator.size());
+        if (was_new_key) {
+            _dict.put_batch(&key, 1);
+        }
+        return iter->second;
+    }
+    size_t cardinality() const { return _accumulator.size(); }
+    bytes_view view() const { return _dict.view(); }
+};
+
+template <>
+class dict_builder<format::Type::BYTE_ARRAY> {
+private:
+    std::unordered_map<bytes, uint32_t, bytes_hasher> _accumulator;
+    plain_encoder<format::Type::BYTE_ARRAY> _dict;
+public:
+    uint32_t put(bytes_view key) {
+        auto [it, was_new_key] = _accumulator.try_emplace(bytes{key}, _accumulator.size());
+        if (was_new_key) {
+            _dict.put_batch(&key, 1);
+        }
+        return it->second;
+    }
+    size_t cardinality() const { return _accumulator.size(); }
+    bytes_view view() const { return _dict.view(); }
+};
+
+template <>
+class dict_builder<format::Type::FIXED_LEN_BYTE_ARRAY> {
+private:
+    std::unordered_map<bytes, uint32_t, bytes_hasher> _accumulator;
+    plain_encoder<format::Type::FIXED_LEN_BYTE_ARRAY> _dict;
+public:
+    uint32_t put(bytes_view key) {
+        auto [it, was_new_key] = _accumulator.try_emplace(bytes{key}, _accumulator.size());
+        if (was_new_key) {
+            _dict.put_batch(&key, 1);
+        }
+        return it->second;
+    }
+    size_t cardinality() const { return _accumulator.size(); }
+    bytes_view view() const { return _dict.view(); }
+};
+
+template <format::Type::type ParquetType>
+class dict_encoder : public value_encoder<ParquetType> {
+private:
+    std::vector<uint32_t> _indices;
+    dict_builder<ParquetType> _values;
+private:
+    int index_bit_width() const {
+        return bit_width(_values.cardinality());
+    }
+public:
+    using typename value_encoder<ParquetType>::input_type;
+    using typename value_encoder<ParquetType>::flush_result;
+    void put_batch(const input_type data[], size_t size) override {
+        _indices.reserve(_indices.size() + size);
+        for (size_t i = 0; i < size; ++i) {
+            _indices.push_back(_values.put(data[i]));
+        }
+    }
+    size_t max_encoded_size() const override {
+        return 1 + std::max(
+                RleEncoder::MinBufferSize(index_bit_width()),
+                RleEncoder::MaxBufferSize(index_bit_width(), _indices.size()));
+    }
+    flush_result flush(byte sink[]) override {
+        *sink = static_cast<byte>(index_bit_width());
+        RleEncoder encoder{sink + 1, static_cast<int>(max_encoded_size() - 1), index_bit_width()};
+        for (uint32_t index : _indices) {
+            encoder.Put(index);
+        }
+        encoder.Flush();
+        _indices.clear();
+        size_t size = 1 + encoder.len();
+        return {size, format::Encoding::RLE_DICTIONARY};
+    }
+    std::optional<bytes_view> view_dict() override { return _values.view(); }
+    uint64_t cardinality() override { return _values.cardinality(); }
+};
+
+// Dict encoder, but it falls back to plain encoding
+// when the dict page grows too big.
+template <format::Type::type ParquetType>
+class dict_or_plain_encoder : public value_encoder<ParquetType> {
+private:
+    dict_encoder<ParquetType> _dict_encoder;
+    plain_encoder<ParquetType> _plain_encoder;
+    bool fallen_back = false; // Have we fallen back to plain yet?
+public:
+    using typename value_encoder<ParquetType>::input_type;
+    using typename value_encoder<ParquetType>::flush_result;
+    // Will fall back to plain encoding when dict page grows
+    // beyond this threshold.
+    static constexpr size_t fallback_threshold = 16 * 1024;
+    void put_batch(const input_type data[], size_t size) override {
+        if (fallen_back) {
+            _plain_encoder.put_batch(data, size);
+        } else {
+            _dict_encoder.put_batch(data, size);
+        }
+    }
+    size_t max_encoded_size() const override {
+        if (fallen_back) {
+            return _plain_encoder.max_encoded_size();
+        } else {
+            return _dict_encoder.max_encoded_size();
+        }
+    }
+    flush_result flush(byte sink[]) override {
+        if (fallen_back) {
+            return _plain_encoder.flush(sink);
+        } else {
+            if (_dict_encoder.view_dict()->size() > fallback_threshold) {
+                fallen_back = true;
+            }
+            return _dict_encoder.flush(sink);
+        }
+    }
+    std::optional<bytes_view> view_dict() override {
+        return _dict_encoder.view_dict();
+    }
+    uint64_t cardinality() override {
+        return _dict_encoder.cardinality();
+    }
+};
+
+template <format::Type::type ParquetType>
+std::unique_ptr<value_encoder<ParquetType>>
+make_value_encoder(format::Encoding::type encoding) {
+    if constexpr (ParquetType == format::Type::INT96) {
+        throw parquet_exception(
+                "INT96 is deprecated and writes of this type are unsupported");
+    }
+    const auto not_implemented = [&] () {
+        return parquet_exception(seastar::format(
+                "Encoding type {} as {} is not implemented yet", ParquetType, encoding));
+    };
+    const auto invalid = [&] () {
+        return parquet_exception(seastar::format(
+                "Encoding {} is invalid for type {}", encoding, ParquetType));
+    };
+    if (encoding == format::Encoding::PLAIN) {
+        return std::make_unique<plain_encoder<ParquetType>>();
+    } else if (encoding == format::Encoding::PLAIN_DICTIONARY) {
+        throw parquet_exception("PLAIN_DICTIONARY is deprecated. Use RLE_DICTIONARY instead");
+    } else if (encoding == format::Encoding::RLE) {
+        if constexpr (ParquetType == format::Type::BOOLEAN) {
+            throw not_implemented();
+        }
+        throw invalid();
+    } else if (encoding == format::Encoding::BIT_PACKED) {
+        throw invalid();
+    } else if (encoding == format::Encoding::DELTA_BINARY_PACKED) {
+        if constexpr (ParquetType == format::Type::INT32) {
+            throw not_implemented();
+        }
+        if constexpr (ParquetType == format::Type::INT64) {
+            throw not_implemented();
+        }
+        throw invalid();
+    } else if (encoding == format::Encoding::DELTA_LENGTH_BYTE_ARRAY) {
+        if constexpr (ParquetType == format::Type::BYTE_ARRAY) {
+            throw not_implemented();
+        }
+        throw invalid();
+    } else if (encoding == format::Encoding::DELTA_BYTE_ARRAY) {
+        if constexpr (ParquetType == format::Type::BYTE_ARRAY) {
+            throw not_implemented();
+        }
+        throw invalid();
+    } else if (encoding == format::Encoding::RLE_DICTIONARY) {
+        return std::make_unique<dict_or_plain_encoder<ParquetType>>();
+    } else if (encoding == format::Encoding::BYTE_STREAM_SPLIT) {
+        throw not_implemented();
+    }
+    throw parquet_exception(seastar::format("Unknown encoding ({})", encoding));
+}
+
+template std::unique_ptr<value_encoder<format::Type::INT32>>
+make_value_encoder<format::Type::INT32>(format::Encoding::type);
+template std::unique_ptr<value_encoder<format::Type::INT64>>
+make_value_encoder<format::Type::INT64>(format::Encoding::type);
+template std::unique_ptr<value_encoder<format::Type::FLOAT>>
+make_value_encoder<format::Type::FLOAT>(format::Encoding::type);
+template std::unique_ptr<value_encoder<format::Type::DOUBLE>>
+make_value_encoder<format::Type::DOUBLE>(format::Encoding::type);
+template std::unique_ptr<value_encoder<format::Type::BOOLEAN>>
+make_value_encoder<format::Type::BOOLEAN>(format::Encoding::type);
+template std::unique_ptr<value_encoder<format::Type::BYTE_ARRAY>>
+make_value_encoder<format::Type::BYTE_ARRAY>(format::Encoding::type);
+template std::unique_ptr<value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>>
+make_value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>(format::Encoding::type);
+
 } // namespace parquet4seastar
