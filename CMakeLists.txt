@@ -36,6 +36,7 @@ add_library (parquet4seastar STATIC
     include/parquet4seastar/bit_stream_utils.hh
     include/parquet4seastar/bpacking.hh
     include/parquet4seastar/bytes.hh
+    include/parquet4seastar/column_chunk_reader.hh
     include/parquet4seastar/compression.hh
     include/parquet4seastar/exception.hh
     include/parquet4seastar/encoding.hh
@@ -44,6 +45,7 @@ add_library (parquet4seastar STATIC
     include/parquet4seastar/rle_encoding.hh
     include/parquet4seastar/thrift_serdes.hh
     include/parquet4seastar/y_combinator.hh
+    src/column_chunk_reader.cc
     src/compression.cc
     src/encoding.cc
     src/parquet_types.cpp
