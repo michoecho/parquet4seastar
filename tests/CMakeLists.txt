@@ -96,3 +96,7 @@ seastar_add_test (compression
   KIND BOOST
   SOURCES compression_test.cc)
 
+seastar_add_test (thrift_serdes_test
+  KIND BOOST
+  SOURCES thrift_serdes_test.cc)
+
