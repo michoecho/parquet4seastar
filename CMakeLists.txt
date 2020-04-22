@@ -37,6 +37,7 @@ add_library (parquet4seastar STATIC
     include/parquet4seastar/bpacking.hh
     include/parquet4seastar/bytes.hh
     include/parquet4seastar/column_chunk_reader.hh
+    include/parquet4seastar/column_chunk_writer.hh
     include/parquet4seastar/compression.hh
     include/parquet4seastar/cql_reader.hh
     include/parquet4seastar/exception.hh
