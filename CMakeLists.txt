@@ -38,12 +38,14 @@ add_library (parquet4seastar STATIC
     include/parquet4seastar/bytes.hh
     include/parquet4seastar/compression.hh
     include/parquet4seastar/exception.hh
+    include/parquet4seastar/encoding.hh
     include/parquet4seastar/overloaded.hh
     include/parquet4seastar/parquet_types.h
     include/parquet4seastar/rle_encoding.hh
     include/parquet4seastar/thrift_serdes.hh
     include/parquet4seastar/y_combinator.hh
     src/compression.cc
+    src/encoding.cc
     src/parquet_types.cpp
     src/thrift_serdes.cc
 )
