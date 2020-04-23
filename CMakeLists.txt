@@ -50,6 +50,7 @@ add_library (parquet4seastar STATIC
     include/parquet4seastar/record_reader.hh
     include/parquet4seastar/rle_encoding.hh
     include/parquet4seastar/thrift_serdes.hh
+    include/parquet4seastar/writer_schema.hh
     include/parquet4seastar/y_combinator.hh
     src/column_chunk_reader.cc
     src/compression.cc
@@ -61,6 +62,7 @@ add_library (parquet4seastar STATIC
     src/record_reader.cc
     src/reader_schema.cc
     src/thrift_serdes.cc
+    src/writer_schema.cc
 )
 
 target_compile_options(parquet4seastar PRIVATE
