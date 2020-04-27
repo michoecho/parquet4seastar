@@ -37,6 +37,7 @@ add_library (parquet4seastar STATIC
     include/parquet4seastar/overloaded.hh
     include/parquet4seastar/parquet_types.h
     include/parquet4seastar/rle_encoding.hh
+    include/parquet4seastar/y_combinator.hh
     src/parquet_types.cpp
 )
 
