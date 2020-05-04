@@ -64,6 +64,11 @@ struct schema {
     std::vector<node> fields;
 };
 
-std::vector<format::SchemaElement> write_schema(const schema& root);
+struct write_schema_result {
+    std::vector<format::SchemaElement> elements;
+    std::vector<std::vector<std::string>> leaf_paths;
+};
+
+write_schema_result write_schema(const schema& root);
 
 } // namespace parquet4seastar::writer_schema

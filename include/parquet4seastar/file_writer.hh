@@ -43,6 +43,7 @@ private:
     seastar::output_stream<char> _sink;
     std::vector<column_chunk_writer_variant> _writers;
     format::FileMetaData _metadata;
+    std::vector<std::vector<std::string>> _leaf_paths;
     thrift_serializer _thrift_serializer;
     size_t _file_offset = 0;
 private:
@@ -84,7 +85,9 @@ public:
     open(const std::string& path, const writer_schema::schema& schema) {
         return seastar::futurize_invoke([&schema, path] {
             auto fw = std::unique_ptr<file_writer>(new file_writer{});
-            fw->_metadata.schema = writer_schema::write_schema(schema);
+            writer_schema::write_schema_result wsr = writer_schema::write_schema(schema);
+            fw->_metadata.schema = std::move(wsr.elements);
+            fw->_leaf_paths = std::move(wsr.leaf_paths);
             fw->init_writers(schema);
 
             seastar::open_flags flags
@@ -124,22 +127,24 @@ public:
         if (_writers.size() > 0) {
             rows_written = std::visit([&] (auto& x) {return x.rows_written();}, _writers[0]);
         }
-        _metadata.row_groups.rbegin()->num_rows = rows_written;
+        _metadata.row_groups.rbegin()->__set_num_rows(rows_written);
 
         return seastar::do_for_each(it(0), it(_writers.size()), [this] (size_t i) {
             return std::visit([&, i] (auto& x) {
                 return x.flush_chunk(_sink);
-            }, _writers[i]).then([this] (seastar::lw_shared_ptr<format::ColumnMetaData> cmd) {
+            }, _writers[i]).then([this, i] (seastar::lw_shared_ptr<format::ColumnMetaData> cmd) {
                 cmd->dictionary_page_offset += _file_offset;
                 cmd->data_page_offset += _file_offset;
+                cmd->__set_path_in_schema(_leaf_paths[i]);
                 bytes_view footer = _thrift_serializer.serialize(*cmd);
 
                 _file_offset += cmd->total_compressed_size;
                 format::ColumnChunk cc;
-                cc.file_offset = _file_offset;
-                cc.meta_data = *cmd;
+                cc.__set_file_offset(_file_offset);
+                cc.__set_meta_data(*cmd);
                 _metadata.row_groups.rbegin()->columns.push_back(cc);
-                _metadata.row_groups.rbegin()->total_byte_size = cmd->total_compressed_size + footer.size();
+                _metadata.row_groups.rbegin()->__set_total_byte_size(
+                        cmd->total_compressed_size + footer.size());
 
                 _file_offset += footer.size();
                 return _sink.write(reinterpret_cast<const char*>(footer.data()), footer.size());
@@ -152,7 +157,7 @@ public:
             for (const format::RowGroup& rg : _metadata.row_groups) {
                 _metadata.num_rows += rg.num_rows;
             }
-            _metadata.version = 1; // Parquet 2.0 == 1
+            _metadata.__set_version(1); // Parquet 2.0 == 1
             bytes_view footer = _thrift_serializer.serialize(_metadata);
             return _sink.write(reinterpret_cast<const char*>(footer.data()), footer.size()).then([this, footer] {
                 uint32_t footer_size = footer.size();
