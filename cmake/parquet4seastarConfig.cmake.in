@@ -1,0 +1,13 @@
+get_filename_component(PARQUET4SEASTAR_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+include(CMakeFindDependencyMacro)
+
+list(APPEND CMAKE_MODULE_PATH ${PARQUET4SEASTAR_CMAKE_DIR})
+find_dependency(Thrift @MIN_Thrift_VERSION@)
+find_dependency(ZLIB)
+find_dependency(Snappy)
+find_dependency(Seastar)
+list(REMOVE_AT CMAKE_MODULE_PATH -1)
+
+if(NOT TARGET parquet4seastar::parquet4seastar)
+    include("${PARQUET4SEASTAR_CMAKE_DIR}/parquet4seastarTargets.cmake")
+endif()

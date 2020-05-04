@@ -30,7 +30,8 @@ list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 find_package (Seastar REQUIRED)
 find_package (Snappy REQUIRED)
 find_package (ZLIB REQUIRED)
-find_package (Thrift 0.11.0 REQUIRED)
+set(MIN_Thrift_VERSION 0.11.0)
+find_package (Thrift ${MIN_Thrift_VERSION} REQUIRED)
 
 add_library (parquet4seastar STATIC
     include/parquet4seastar/bit_stream_utils.hh
@@ -88,6 +89,48 @@ target_include_directories (parquet4seastar
   PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+
+include(GNUInstallDirs)
+set(INSTALL_CONFIGDIR ${CMAKE_INSTALL_LIBDIR}/cmake/parquet4seastar)
+
+install(TARGETS parquet4seastar
+    EXPORT parquet4seastar-targets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(EXPORT parquet4seastar-targets
+    FILE
+        parquet4seastarTargets.cmake
+    NAMESPACE
+        parquet4seastar::
+    DESTINATION
+        ${INSTALL_CONFIGDIR}
+)
+
+include(CMakePackageConfigHelpers)
+configure_package_config_file(${CMAKE_CURRENT_LIST_DIR}/cmake/parquet4seastarConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/parquet4seastarConfig.cmake
+    INSTALL_DESTINATION ${INSTALL_CONFIGDIR}
+)
+
+install(FILES
+    ${CMAKE_CURRENT_LIST_DIR}/cmake/FindThrift.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/parquet4seastarConfig.cmake
+    DESTINATION ${INSTALL_CONFIGDIR}
+)
+
+configure_file(${CMAKE_CURRENT_LIST_DIR}/cmake/FindThrift.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/FindThrift.cmake
+    COPYONLY)
+
+export(EXPORT parquet4seastar-targets
+    FILE ${CMAKE_CURRENT_BINARY_DIR}/parquet4seastarTargets.cmake
+    NAMESPACE parquet4seastar::)
+
+export(PACKAGE parquet4seastar)
 
 enable_testing ()
 add_subdirectory (tests)
