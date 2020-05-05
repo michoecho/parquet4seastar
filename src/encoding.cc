@@ -503,9 +503,9 @@ public:
         }
     }
     size_t max_encoded_size() const override {
-        return 1 + std::max(
-                RleEncoder::MinBufferSize(index_bit_width()),
-                RleEncoder::MaxBufferSize(index_bit_width(), _indices.size()));
+        return 1
+                + RleEncoder::MinBufferSize(index_bit_width())
+                + RleEncoder::MaxBufferSize(index_bit_width(), _indices.size());
     }
     flush_result flush(byte sink[]) override {
         *sink = static_cast<byte>(index_bit_width());
