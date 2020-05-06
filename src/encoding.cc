@@ -185,6 +185,51 @@ public:
         }
     }
 };
+
+class delta_length_byte_array_decoder final : public decoder<format::Type::BYTE_ARRAY> {
+    seastar::temporary_buffer<byte> _values;
+    std::vector<int32_t> _lengths;
+    size_t _current_idx;
+    static constexpr size_t BATCH_SIZE = 1000;
+public:
+    using typename decoder<format::Type::BYTE_ARRAY>::output_type;
+    size_t read_batch(size_t n, output_type out[]) override {
+        n = std::min(n, _lengths.size() - _current_idx);
+        for (size_t i = 0; i < n; ++i) {
+            uint32_t len = _lengths[_current_idx];
+            if (len > _values.size()) {
+                throw parquet_exception(
+                        "Unexpected end of values in DELTA_LENGTH_BYTE_ARRAY");
+            }
+            out[i] = _values.share(0, len);
+            _values.trim_front(len);
+            ++_current_idx;
+        }
+        return n;
+    }
+    void reset(bytes_view data) override {
+        delta_binary_packed_decoder<format::Type::INT32> _len_decoder;
+        _len_decoder.reset(data);
+
+        size_t lengths_read = 0;
+        while (true) {
+            _lengths.resize(lengths_read + BATCH_SIZE);
+            int32_t* output = _lengths.data() + _lengths.size() - BATCH_SIZE;
+            size_t n_read = _len_decoder.read_batch(BATCH_SIZE, output);
+            if (n_read == 0) {
+                break;
+            }
+            lengths_read += n_read;
+        }
+        _lengths.resize(lengths_read);
+
+        size_t len_bytes = data.size() - _len_decoder.bytes_left();
+        data.remove_prefix(len_bytes);
+        _values = seastar::temporary_buffer<byte>(data.data(), data.size());
+        _current_idx = 0;
+    }
+};
+
 template <format::Type::type ParquetType>
 void plain_decoder_trivial<ParquetType>::reset(bytes_view data) {
     _buffer = data;
@@ -348,6 +393,13 @@ void value_decoder<ParquetType>::reset(bytes_view buf, format::Encoding::type en
                 _decoder = std::make_unique<delta_binary_packed_decoder<ParquetType>>();
             } else {
                 throw parquet_exception::corrupted_file("DELTA_BINARY_PACKED is valid only for INT32 and INT64");
+            }
+            break;
+        case format::Encoding::DELTA_LENGTH_BYTE_ARRAY:
+            if constexpr (ParquetType == format::Type::BYTE_ARRAY) {
+                _decoder = std::make_unique<delta_length_byte_array_decoder>();
+            } else {
+                throw parquet_exception::corrupted_file("DELTA_LENGTH_BYTE_ARRAY is valid only for BYTE_ARRAY");
             }
             break;
         default:
