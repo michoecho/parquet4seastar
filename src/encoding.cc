@@ -79,6 +79,66 @@ void level_decoder::reset_v2(bytes_view encoded_levels, uint32_t num_values) {
 }
 
 template <format::Type::type ParquetType>
+class plain_decoder_trivial final : public decoder<ParquetType> {
+    bytes_view _buffer;
+public:
+    using typename decoder<ParquetType>::output_type;
+    void reset(bytes_view data) override;
+    size_t read_batch(size_t n, output_type out[]) override;
+};
+
+class plain_decoder_boolean final : public decoder<format::Type::BOOLEAN> {
+    BitReader _decoder;
+public:
+    using typename decoder<format::Type::BOOLEAN>::output_type;
+    void reset(bytes_view data) override;
+    size_t read_batch(size_t n, output_type out[]) override;
+};
+
+class plain_decoder_byte_array final : public decoder<format::Type::BYTE_ARRAY> {
+    seastar::temporary_buffer<uint8_t> _buffer;
+public:
+    using typename decoder<format::Type::BYTE_ARRAY>::output_type;
+    void reset(bytes_view data) override;
+    size_t read_batch(size_t n, output_type out[]) override;
+};
+
+class plain_decoder_fixed_len_byte_array final : public decoder<format::Type::FIXED_LEN_BYTE_ARRAY> {
+    size_t _fixed_len;
+    seastar::temporary_buffer<uint8_t> _buffer;
+public:
+    using typename decoder<format::Type::FIXED_LEN_BYTE_ARRAY>::output_type;
+    explicit plain_decoder_fixed_len_byte_array(size_t fixed_len=0)
+            : _fixed_len(fixed_len) {}
+    void reset(bytes_view data) override;
+    size_t read_batch(size_t n, output_type out[]) override;
+};
+
+template <format::Type::type ParquetType>
+class dict_decoder final : public decoder<ParquetType> {
+public:
+    using typename decoder<ParquetType>::output_type;
+private:
+    output_type* _dict;
+    size_t _dict_size;
+    RleDecoder _rle_decoder;
+public:
+    explicit dict_decoder(output_type dict[], size_t dict_size)
+            : _dict(dict)
+            , _dict_size(dict_size) {};
+    void reset(bytes_view data) override;
+    size_t read_batch(size_t n, output_type out[]) override;
+};
+
+class rle_decoder_boolean final : public decoder<format::Type::BOOLEAN> {
+    RleDecoder _rle_decoder;
+public:
+    using typename decoder<format::Type::BOOLEAN>::output_type;
+    void reset(bytes_view data) override;
+    size_t read_batch(size_t n, output_type out[]) override;
+};
+
+template <format::Type::type ParquetType>
 class delta_binary_packed_decoder final : public decoder<ParquetType> {
     BitReader _decoder;
     uint32_t _values_per_block;
