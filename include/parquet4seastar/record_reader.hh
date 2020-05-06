@@ -437,6 +437,9 @@ inline seastar::future<> typed_primitive_reader<L>::refill_when_empty() {
             }
             _values_offset = 0;
             _levels_offset = 0;
+        }).handle_exception_type([this] (const std::exception& e){
+            throw parquet_exception(seastar::format(
+                        "In column {}: {}", _name, e.what()));
         });
     }
     return seastar::make_ready_future<>();
