@@ -108,7 +108,7 @@ seastar_add_test (cql_reader
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test_data/parquet-testing/
   SOURCES cql_reader_test.cc)
 
-seastar_add_test (dictionary_encoder_test.cc
+seastar_add_test (dictionary_encoder
   KIND BOOST
   SOURCES dictionary_encoder_test.cc)
 
