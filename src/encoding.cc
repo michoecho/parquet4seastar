@@ -359,6 +359,38 @@ public:
 };
 
 template <format::Type::type ParquetType>
+class byte_stream_split_decoder final : public decoder<ParquetType> {
+    bytes_view _data;
+    size_t _current_idx;
+    size_t _total_values;
+public:
+    using typename decoder<ParquetType>::output_type;
+    size_t read_batch(size_t n, output_type out[]) override {
+        n = std::min(n, _total_values - _current_idx);
+
+        byte* out_bytes = reinterpret_cast<byte*>(out);
+        for (size_t i = 0; i < n; ++i) {
+            for (size_t k = 0; k < sizeof(output_type); ++k) {
+                size_t out_byte_idx = k + i * sizeof(output_type);
+                size_t in_byte_idx = _current_idx + k * _total_values;
+                out_bytes[out_byte_idx] = _data[in_byte_idx];
+            }
+            ++_current_idx;
+        }
+        return n;
+    }
+    void reset(bytes_view data) override {
+        if (data.size() % sizeof(output_type) != 0) {
+            throw parquet_exception( "Data size in BYTE_STREAM_SPLIT "
+                    "is not divisible by size of data type");
+        }
+        _data = data;
+        _total_values = data.size() / sizeof(output_type);
+        _current_idx = 0;
+    }
+};
+
+template <format::Type::type ParquetType>
 void plain_decoder_trivial<ParquetType>::reset(bytes_view data) {
     _buffer = data;
 }
@@ -535,6 +567,13 @@ void value_decoder<ParquetType>::reset(bytes_view buf, format::Encoding::type en
                 _decoder = std::make_unique<delta_byte_array_decoder>();
             } else {
                 throw parquet_exception::corrupted_file("DELTA_BYTE_ARRAY is valid only for BYTE_ARRAY");
+            }
+            break;
+        case format::Encoding::BYTE_STREAM_SPLIT:
+            if constexpr (ParquetType == format::Type::FLOAT || ParquetType == format::Type::DOUBLE) {
+                _decoder = std::make_unique<byte_stream_split_decoder<ParquetType>>();
+            } else {
+                throw parquet_exception::corrupted_file("DELTA_BYTE_ARRAY is valid only for FLOAT and DOUBLE");
             }
             break;
         default:

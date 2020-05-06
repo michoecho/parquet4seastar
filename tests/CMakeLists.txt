@@ -129,3 +129,7 @@ seastar_add_test (delta_length_byte_array
 seastar_add_test (delta_byte_array
   KIND BOOST
   SOURCES delta_byte_array_test.cc)
+
+seastar_add_test (byte_stream_split
+  KIND BOOST
+  SOURCES byte_stream_split_test.cc)
