@@ -206,26 +206,6 @@ public:
     size_t read_batch(size_t n, output_type out[]) override;
 };
 
-template <format::Type::type ParquetType>
-class delta_binary_packed_decoder final : public decoder<ParquetType> {
-    BitReader _decoder;
-    uint32_t _values_current_block;
-    uint32_t _num_mini_blocks;
-    uint64_t _values_per_mini_block;
-    uint64_t _values_current_mini_block;
-    int32_t _min_delta;
-    size_t _mini_block_idx;
-    buffer _delta_bit_widths;
-    int _delta_bit_width;
-    int32_t _last_value;
-private:
-    void init_block();
-public:
-    using typename decoder<ParquetType>::output_type;
-    size_t read_batch(size_t n, output_type out[]) override;
-    void reset(bytes_view data) override;
-};
-
 // A uniform interface to all the various value decoders.
 template<format::Type::type ParquetType>
 class value_decoder {

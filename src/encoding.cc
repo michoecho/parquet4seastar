@@ -79,6 +79,113 @@ void level_decoder::reset_v2(bytes_view encoded_levels, uint32_t num_values) {
 }
 
 template <format::Type::type ParquetType>
+class delta_binary_packed_decoder final : public decoder<ParquetType> {
+    BitReader _decoder;
+    uint32_t _values_per_block;
+    uint32_t _num_mini_blocks;
+    uint32_t _values_remaining;
+    int32_t _last_value;
+
+    int32_t _min_delta;
+    buffer _delta_bit_widths;
+
+    uint8_t _delta_bit_width;
+    uint32_t _mini_block_idx;
+    uint64_t _values_current_mini_block;
+    uint32_t _values_per_mini_block;
+private:
+    void init_block() {
+        if (!_decoder.GetZigZagVlqInt(&_min_delta)) {
+            throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED block header");
+        }
+
+        for (uint32_t i = 0; i < _num_mini_blocks; ++i) {
+            if (!_decoder.GetAligned<uint8_t>(1, _delta_bit_widths.data() + i)) {
+                throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED block header");
+            }
+        }
+        _mini_block_idx = 0;
+    }
+public:
+    using typename decoder<ParquetType>::output_type;
+
+    size_t bytes_left() {
+        return _decoder.bytes_left();
+    }
+
+    void reset(bytes_view data) override {
+        _decoder.Reset(data.data(), data.size());
+
+        if (!_decoder.GetVlqInt(&_values_per_block)) {
+            throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED header");
+        }
+        if (!_decoder.GetVlqInt(&_num_mini_blocks)) {
+            throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED header");
+        }
+        if (_num_mini_blocks == 0) {
+            throw parquet_exception("In DELTA_BINARY_PACKED number miniblocks per block is 0");
+        }
+        if (!_decoder.GetVlqInt(&_values_remaining)) {
+            throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED header");
+        }
+        if (!_decoder.GetZigZagVlqInt(&_last_value)) {
+            throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED header");
+        }
+
+        if (_delta_bit_widths.size() < static_cast<uint32_t>(_num_mini_blocks)) {
+            _delta_bit_widths = buffer(_num_mini_blocks);
+        }
+
+        _values_per_mini_block = _values_per_block / _num_mini_blocks;
+        _values_current_mini_block = 0;
+        _mini_block_idx = _num_mini_blocks;
+    }
+
+    size_t read_batch(size_t n, output_type out[]) override {
+        if (_values_remaining == 0) {
+            return 0;
+        }
+        size_t i = 0;
+        while (i < n) {
+            out[i] = _last_value;
+            ++i;
+            --_values_remaining;
+            if (_values_remaining == 0) {
+                eat_final_padding();
+                break;
+            }
+            if (__builtin_expect(_values_current_mini_block == 0, 0)) {
+                if (_mini_block_idx == _num_mini_blocks) {
+                    init_block();
+                }
+                _delta_bit_width = _delta_bit_widths.data()[_mini_block_idx];
+                _values_current_mini_block = _values_per_mini_block;
+                ++_mini_block_idx;
+            }
+            // TODO: an optimized implementation would decode the entire
+            // miniblock at once.
+            int64_t delta;
+            if (!_decoder.GetValue(_delta_bit_width, &delta)) {
+                throw parquet_exception("Unexpected end of data in DELTA_BINARY_PACKED");
+            }
+            delta += _min_delta;
+            _last_value += static_cast<int32_t>(delta);
+            --_values_current_mini_block;
+        }
+        return i;
+    }
+
+    void eat_final_padding() {
+        while (_values_current_mini_block > 0) {
+            int64_t unused_delta;
+            if (!_decoder.GetValue(_delta_bit_width, &unused_delta)) {
+                throw parquet_exception("Unexpected end of data in DELTA_BINARY_PACKED");
+            }
+            --_values_current_mini_block;
+        }
+    }
+};
+template <format::Type::type ParquetType>
 void plain_decoder_trivial<ParquetType>::reset(bytes_view data) {
     _buffer = data;
 }
@@ -200,66 +307,6 @@ size_t rle_decoder_boolean::read_batch(size_t n, uint8_t out[]) {
     return _rle_decoder.GetBatch(out, n);
 }
 
-template <format::Type::type ParquetType>
-void delta_binary_packed_decoder<ParquetType>::reset(bytes_view data) {
-    _decoder.Reset(data.data(), data.size());
-    _values_current_block = 0;
-    _values_current_mini_block = 0;
-}
-
-template <format::Type::type ParquetType>
-void delta_binary_packed_decoder<ParquetType>::init_block() {
-    uint32_t block_size;
-    if (!_decoder.GetVlqInt(&block_size)) { throw; }
-    if (!_decoder.GetVlqInt(&_num_mini_blocks)) { throw; }
-    if (!_decoder.GetVlqInt(&_values_current_block)) { throw; }
-    if (!_decoder.GetZigZagVlqInt(&_last_value)) { throw; }
-
-    if (_delta_bit_widths.size() < static_cast<uint32_t>(_num_mini_blocks)) {
-        _delta_bit_widths = buffer(_num_mini_blocks);
-    }
-
-    if (!_decoder.GetZigZagVlqInt(&_min_delta)) { throw; };
-    for (uint32_t i = 0; i < _num_mini_blocks; ++i) {
-        if (!_decoder.GetAligned<uint8_t>(1, _delta_bit_widths.data() + i)) {
-            throw;
-        }
-    }
-    _values_per_mini_block = block_size / _num_mini_blocks;
-    _mini_block_idx = 0;
-    _delta_bit_width = _delta_bit_widths.data()[0];
-    _values_current_mini_block = _values_per_mini_block;
-}
-
-template <format::Type::type ParquetType>
-size_t delta_binary_packed_decoder<ParquetType>::read_batch(size_t n, output_type out[]) {
-    try {
-        for (size_t i = 0; i < n; ++i) {
-            if (__builtin_expect(_values_current_mini_block == 0, 0)) {
-                ++_mini_block_idx;
-                if (_mini_block_idx < static_cast<size_t>(_num_mini_blocks)) {
-                    _delta_bit_width = _delta_bit_widths.data()[_mini_block_idx];
-                    _values_current_mini_block = _values_per_mini_block;
-                } else {
-                    init_block();
-                    out[i] = _last_value;
-                    continue;
-                }
-            }
-
-            // TODO: the entire miniblock should be decoded at once.
-            int64_t delta;
-            if (!_decoder.GetValue(_delta_bit_width, &delta)) { throw; }
-            delta += _min_delta;
-            _last_value += static_cast<int32_t>(delta);
-            out[i] = _last_value;
-            --_values_current_mini_block;
-        }
-    } catch (...) {
-        throw parquet_exception::corrupted_file("Could not decode DELTA_BINARY_PACKED batch");
-    }
-    return n;
-}
 
 template <format::Type::type ParquetType>
 void value_decoder<ParquetType>::reset_dict(output_type dictionary[], size_t dictionary_size) {

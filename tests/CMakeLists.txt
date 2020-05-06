@@ -118,3 +118,6 @@ seastar_add_test (column_chunk_writer
 seastar_add_test (file_writer
   SOURCES file_writer_test.cc)
 
+seastar_add_test (delta_binary_packed
+  KIND BOOST
+  SOURCES delta_binary_packed_test.cc)
