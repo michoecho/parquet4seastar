@@ -290,6 +290,74 @@ public:
     }
 };
 
+class delta_byte_array_decoder final : public decoder<format::Type::BYTE_ARRAY> {
+    using tb = seastar::temporary_buffer<byte>;
+    std::vector<tb> _suffixes;
+    std::vector<int32_t> _lengths;
+    bytes _last_string;
+    size_t _current_idx;
+    static constexpr size_t BATCH_SIZE = 1000;
+public:
+    using typename decoder<format::Type::BYTE_ARRAY>::output_type;
+    size_t read_batch(size_t n, output_type out[]) override {
+        n = std::min(n, _suffixes.size() - _current_idx);
+        for (size_t i = 0; i < n; ++i) {
+            uint32_t prefix_len = _lengths[i];
+            const tb& suffix = _suffixes[i];
+            if (prefix_len > _last_string.size()) {
+                throw parquet_exception("Invalid prefix length in DELTA_BYTE_ARRAY");
+            }
+            out[i] = tb(prefix_len + suffix.size());
+            std::copy_n(
+                    _last_string.begin(),
+                    prefix_len,
+                    out[i].get_write());
+            std::copy(
+                    suffix.begin(),
+                    suffix.end(),
+                    out[i].get_write() + prefix_len);
+            _last_string.resize(prefix_len);
+            _last_string.insert(_last_string.end(), suffix.begin(), suffix.end());
+        }
+        return n;
+    }
+    void reset(bytes_view data) override {
+        delta_binary_packed_decoder<format::Type::INT32> _len_decoder;
+        delta_length_byte_array_decoder _suffix_decoder;
+
+        _len_decoder.reset(data);
+        size_t lengths_read = 0;
+        while (true) {
+            _lengths.resize(lengths_read + BATCH_SIZE);
+            int32_t* output = _lengths.data() + _lengths.size() - BATCH_SIZE;
+            size_t n_read = _len_decoder.read_batch(BATCH_SIZE, output);
+            if (n_read == 0) {
+                break;
+            }
+            lengths_read += n_read;
+        }
+        _lengths.resize(lengths_read);
+
+        size_t len_bytes = data.size() - _len_decoder.bytes_left();
+        data.remove_prefix(len_bytes);
+
+        _suffix_decoder.reset(data);
+        size_t suffixes_read = 0;
+        while (true) {
+            _suffixes.resize(suffixes_read + BATCH_SIZE);
+            tb* output = _suffixes.data() + _suffixes.size() - BATCH_SIZE;
+            size_t n_read = _suffix_decoder.read_batch(BATCH_SIZE, output);
+            if (n_read == 0) {
+                break;
+            }
+            suffixes_read += n_read;
+        }
+        _suffixes.resize(suffixes_read);
+
+        _current_idx = 0;
+    }
+};
+
 template <format::Type::type ParquetType>
 void plain_decoder_trivial<ParquetType>::reset(bytes_view data) {
     _buffer = data;
@@ -460,6 +528,13 @@ void value_decoder<ParquetType>::reset(bytes_view buf, format::Encoding::type en
                 _decoder = std::make_unique<delta_length_byte_array_decoder>();
             } else {
                 throw parquet_exception::corrupted_file("DELTA_LENGTH_BYTE_ARRAY is valid only for BYTE_ARRAY");
+            }
+            break;
+        case format::Encoding::DELTA_BYTE_ARRAY:
+            if constexpr (ParquetType == format::Type::BYTE_ARRAY) {
+                _decoder = std::make_unique<delta_byte_array_decoder>();
+            } else {
+                throw parquet_exception::corrupted_file("DELTA_BYTE_ARRAY is valid only for BYTE_ARRAY");
             }
             break;
         default:

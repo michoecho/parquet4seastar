@@ -125,3 +125,7 @@ seastar_add_test (delta_binary_packed
 seastar_add_test (delta_length_byte_array
   KIND BOOST
   SOURCES delta_length_byte_array_test.cc)
+
+seastar_add_test (delta_byte_array
+  KIND BOOST
+  SOURCES delta_byte_array_test.cc)
