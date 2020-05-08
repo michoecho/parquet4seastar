@@ -24,7 +24,7 @@
 #include <seastar/testing/test_case.hh>
 #include <seastar/core/thread.hh>
 
-const std::string test_file_name = "/tmp/parquet_column_roundtrip_test.bin";
+const std::string test_file_name = "/tmp/parquet4seastar_file_writer_test.parquet";
 
 constexpr parquet4seastar::bytes_view operator ""_bv(const char* str, size_t len) noexcept {
     return {static_cast<const uint8_t*>(static_cast<const void*>(str)), len};

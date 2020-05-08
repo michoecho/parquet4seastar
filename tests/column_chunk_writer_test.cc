@@ -36,7 +36,7 @@ seastar::temporary_buffer<uint8_t> operator ""_tb(const char* str, size_t len) n
     return {static_cast<const uint8_t*>(static_cast<const void*>(str)), len};
 }
 
-constexpr std::string_view test_file_name = "/tmp/parquet_column_roundtrip_test.bin";
+constexpr std::string_view test_file_name = "/tmp/parquet4seastar_column_chunk_writer_test.bin";
 
 SEASTAR_TEST_CASE(column_roundtrip) {
     return seastar::async([] {
