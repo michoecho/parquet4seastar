@@ -30,6 +30,11 @@ list (APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 find_package (Seastar REQUIRED)
 find_package (Snappy REQUIRED)
 find_package (ZLIB REQUIRED)
+find_package (Brotli REQUIRED)
+find_package (LZ4 REQUIRED)
+find_package (ZSTD REQUIRED)
+
+
 set(MIN_Thrift_VERSION 0.11.0)
 find_package (Thrift ${MIN_Thrift_VERSION} REQUIRED)
 
@@ -80,6 +85,10 @@ target_link_libraries(parquet4seastar
     Thrift::thrift
     ZLIB::ZLIB
     Snappy::snappy
+    brotlidec
+    brotlienc
+    LZ4::lz4
+    ZSTD::zstd
 )
 
 target_include_directories (parquet4seastar
