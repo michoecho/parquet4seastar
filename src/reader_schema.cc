@@ -61,7 +61,7 @@ raw_schema compute_shape(const std::vector<format::SchemaElement>& flat_schema) 
 // Assign the column_index to each primitive (leaf) node of the schema.
 void compute_leaves(raw_schema& raw_schema) {
     y_combinator{[&] (auto&& compute, raw_node& r) -> void {
-        if (r.children.empty()) {
+        if (!r.info.__isset.num_children) {
             // Primitive node
             r.column_index = raw_schema.leaves.size();
             raw_schema.leaves.push_back(&r);
@@ -177,7 +177,7 @@ struct_node build_struct_node(const raw_node& r) {
 
 enum class node_type { MAP, LIST, STRUCT, PRIMITIVE };
 node_type determine_node_type(const raw_node& r) {
-    if (r.children.empty()) {
+    if (!r.info.__isset.num_children) {
         return node_type::PRIMITIVE;
     }
     if (r.info.__isset.converted_type) {
