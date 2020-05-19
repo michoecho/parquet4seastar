@@ -573,7 +573,7 @@ void value_decoder<ParquetType>::reset(bytes_view buf, format::Encoding::type en
             if constexpr (ParquetType == format::Type::FLOAT || ParquetType == format::Type::DOUBLE) {
                 _decoder = std::make_unique<byte_stream_split_decoder<ParquetType>>();
             } else {
-                throw parquet_exception::corrupted_file("DELTA_BYTE_ARRAY is valid only for FLOAT and DOUBLE");
+                throw parquet_exception::corrupted_file("BYTE_STREAM_SPLIT is valid only for FLOAT and DOUBLE");
             }
             break;
         default:
