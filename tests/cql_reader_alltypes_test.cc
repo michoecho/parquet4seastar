@@ -73,23 +73,15 @@ INSERT INTO "parquet"("row_number", "optional_uint32", "twice_repeated_uint16", 
 
 SEASTAR_TEST_CASE(parquet_to_cql) {
     return seastar::async([] {
-        std::unordered_map<std::string, std::string> file_type_to_cql = {
-            {"basic", basic_cql},
-            {"time", date_time_cql},
-            {"timestamp", timestamp_interval_cql},
-            {"decimal", decimal_cql},
-            {"other", byte_array_cql},
-            {"collections", collections_cql}
+        std::string suffix = ".uncompressed.plain.parquet";
+        std::vector<std::pair<std::string, std::string>> test_cases = {
+            {"basic" + suffix, basic_cql},
+            {"collections" + suffix, collections_cql},
+            {"decimal" + suffix, decimal_cql},
+            {"other" + suffix, byte_array_cql},
+            {"time" + suffix, date_time_cql},
+            {"timestamp" + suffix, timestamp_interval_cql}
         };
-
-        std::vector<std::pair<std::string, std::string>> test_cases;
-        for (std::string type : {"basic", "time", "timestamp", "decimal", "other", "collections"}){
-            for (std::string compression : {"uncompressed", "snappy", "gzip"}){
-                for (std::string encoding : {"plain", "dict"}) {
-                    test_cases.push_back(std::make_pair(type + "." + compression + "." + encoding + ".parquet", file_type_to_cql[type]));
-                }
-            }
-        }
 
         for (const auto& [filename, output] : test_cases) {
             std::stringstream ss;
