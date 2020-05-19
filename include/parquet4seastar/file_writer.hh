@@ -144,7 +144,9 @@ public:
                 cc.__set_meta_data(*cmd);
                 _metadata.row_groups.rbegin()->columns.push_back(cc);
                 _metadata.row_groups.rbegin()->__set_total_byte_size(
-                        cmd->total_compressed_size + footer.size());
+                        _metadata.row_groups.rbegin()->total_byte_size
+                        + cmd->total_compressed_size
+                        + footer.size());
 
                 _file_offset += footer.size();
                 return _sink.write(reinterpret_cast<const char*>(footer.data()), footer.size());
