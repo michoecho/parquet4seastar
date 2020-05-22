@@ -88,48 +88,52 @@ function (seastar_add_test name)
     COMMAND ${CMAKE_COMMAND} --build ${PROJECT_BINARY_DIR} --target ${target})
 endfunction ()
 
-seastar_add_test (rle_encoding
+#seastar_add_test (rle_encoding
+#  KIND BOOST
+#  SOURCES rle_encoding_test.cc)
+#
+#seastar_add_test (compression
+#  KIND BOOST
+#  SOURCES compression_test.cc)
+#
+#seastar_add_test (thrift_serdes_test
+#  KIND BOOST
+#  SOURCES thrift_serdes_test.cc)
+#
+#seastar_add_test (cql_reader_alltypes
+#  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test_data/alltypes/
+#  SOURCES cql_reader_alltypes_test.cc)
+#
+#seastar_add_test (cql_reader
+#  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test_data/parquet-testing/
+#  SOURCES cql_reader_test.cc)
+#
+#seastar_add_test (dictionary_encoder
+#  KIND BOOST
+#  SOURCES dictionary_encoder_test.cc)
+#
+#seastar_add_test (column_chunk_writer
+#  SOURCES column_chunk_writer_test.cc)
+#
+#seastar_add_test (file_writer
+#  SOURCES file_writer_test.cc)
+#
+#seastar_add_test (delta_binary_packed
+#  KIND BOOST
+#  SOURCES delta_binary_packed_test.cc)
+#
+#seastar_add_test (delta_length_byte_array
+#  KIND BOOST
+#  SOURCES delta_length_byte_array_test.cc)
+#
+#seastar_add_test (delta_byte_array
+#  KIND BOOST
+#  SOURCES delta_byte_array_test.cc)
+#
+#seastar_add_test (byte_stream_split
+#  KIND BOOST
+#  SOURCES byte_stream_split_test.cc)
+
+seastar_add_test(dbp_encoding_test
   KIND BOOST
-  SOURCES rle_encoding_test.cc)
-
-seastar_add_test (compression
-  KIND BOOST
-  SOURCES compression_test.cc)
-
-seastar_add_test (thrift_serdes_test
-  KIND BOOST
-  SOURCES thrift_serdes_test.cc)
-
-seastar_add_test (cql_reader_alltypes
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test_data/alltypes/
-  SOURCES cql_reader_alltypes_test.cc)
-
-seastar_add_test (cql_reader
-  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/test_data/parquet-testing/
-  SOURCES cql_reader_test.cc)
-
-seastar_add_test (dictionary_encoder
-  KIND BOOST
-  SOURCES dictionary_encoder_test.cc)
-
-seastar_add_test (column_chunk_writer
-  SOURCES column_chunk_writer_test.cc)
-
-seastar_add_test (file_writer
-  SOURCES file_writer_test.cc)
-
-seastar_add_test (delta_binary_packed
-  KIND BOOST
-  SOURCES delta_binary_packed_test.cc)
-
-seastar_add_test (delta_length_byte_array
-  KIND BOOST
-  SOURCES delta_length_byte_array_test.cc)
-
-seastar_add_test (delta_byte_array
-  KIND BOOST
-  SOURCES delta_byte_array_test.cc)
-
-seastar_add_test (byte_stream_split
-  KIND BOOST
-  SOURCES byte_stream_split_test.cc)
+  SOURCES dbp_encoding_test.cc)
