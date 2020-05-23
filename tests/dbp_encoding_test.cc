@@ -30,29 +30,29 @@
 
 namespace parquet4seastar {
 
-void test_encoding_happy_small() {
-    const size_t MAX_PAGE_HEADER_WRITER_SIZE = 4; // assumint 32bit values, should be 16, idk
-    const size_t MAX_BIT_WRITER_SIZE = 32;
-
-    int32_t values[] = {1, 2, 5, 8, 13};
-    size_t values_len = 5;
-    std::vector<int32_t> decoding_buffer(values_len);
-    std::vector<uint32_t> encoding_buffer(MAX_PAGE_HEADER_WRITER_SIZE + MAX_BIT_WRITER_SIZE);
-    uint8_t* header_buffer = (uint8_t*) encoding_buffer.data();
-    uint8_t* bit_buffer = ((uint8_t*) encoding_buffer.data()) + MAX_PAGE_HEADER_WRITER_SIZE;
-    DeltaBitPackEncoder<format::Type::INT32> encoder(header_buffer, MAX_PAGE_HEADER_WRITER_SIZE, bit_buffer, MAX_BIT_WRITER_SIZE);
-    DeltaBitPackDecoder<format::Type::INT32> decoder;
-
-    encoder.put(values, values_len);
-    encoder.flush_buffer();
-
-    decoder.set_data((uint8_t*) encoding_buffer.data(), MAX_PAGE_HEADER_WRITER_SIZE + MAX_BIT_WRITER_SIZE);
-    decoder.get((int32_t*) decoding_buffer.data(), values_len);
-
-    for(int i = 0; i < values_len; i++) {
-        std::cout << decoding_buffer[i] << std::endl;
-    }
-}
+//void test_encoding_happy_small() {
+//    const size_t MAX_PAGE_HEADER_WRITER_SIZE = 4; // assumint 32bit values, should be 16, idk
+//    const size_t MAX_BIT_WRITER_SIZE = 32;
+//
+//    int32_t values[] = {1, 2, 5, 8, 13};
+//    size_t values_len = 5;
+//    std::vector<int32_t> decoding_buffer(values_len);
+//    std::vector<uint32_t> encoding_buffer(MAX_PAGE_HEADER_WRITER_SIZE + MAX_BIT_WRITER_SIZE);
+//    uint8_t* header_buffer = (uint8_t*) encoding_buffer.data();
+//    uint8_t* bit_buffer = ((uint8_t*) encoding_buffer.data()) + MAX_PAGE_HEADER_WRITER_SIZE;
+//    DeltaBitPackEncoder<format::Type::INT32> encoder(header_buffer, MAX_PAGE_HEADER_WRITER_SIZE, bit_buffer, MAX_BIT_WRITER_SIZE);
+//    DeltaBitPackDecoder<format::Type::INT32> decoder;
+//
+//    encoder.put(values, values_len);
+//    encoder.flush_buffer();
+//
+//    decoder.set_data((uint8_t*) encoding_buffer.data(), MAX_PAGE_HEADER_WRITER_SIZE + MAX_BIT_WRITER_SIZE);
+//    decoder.get((int32_t*) decoding_buffer.data(), values_len);
+//
+//    for(int i = 0; i < values_len; i++) {
+//        std::cout << decoding_buffer[i] << std::endl;
+//    }
+//}
 
 void print_header(uint8_t* header) {
     std::cout << "HEADER\n";
@@ -65,46 +65,35 @@ void print_header(uint8_t* header) {
     }
 }
 
+const int NUM_VALUES = 10000;
+
 void test_encoding_happy_large() {
-    int NUM_VALUES = 10000;
-    std::vector<int32_t> values(NUM_VALUES);
-    values[0] = 2*NUM_VALUES;
-    for (int i = 1; i < 10000; i++) {
-        values[i] = values[i-1] + i;
+    std::vector<int32_t> values;
+
+    values.push_back(2*NUM_VALUES);
+    for (int i = 1; i < NUM_VALUES; i++) {
+        values.push_back(values[i-1] + i);
     }
-    std::vector<uint32_t> encoding_buffer(MAX_PAGE_HEADER_WRITER_SIZE + NUM_VALUES * 2);
-    std::fill(encoding_buffer.begin(), encoding_buffer.end(), 0);
-
-    uint8_t* header_buffer = (uint8_t*) encoding_buffer.data();
-    uint8_t* bit_buffer = ((uint8_t*) encoding_buffer.data()) + MAX_PAGE_HEADER_WRITER_SIZE;
-    DeltaBitPackEncoder<format::Type::INT32> encoder(header_buffer, MAX_PAGE_HEADER_WRITER_SIZE, bit_buffer, NUM_VALUES * 2);
-    encoder.put(values.data(), NUM_VALUES);
-    encoder.flush_buffer();
-
-    print_header(header_buffer);
-
-    std::vector<int32_t> decoding_buffer(NUM_VALUES);
-    DeltaBitPackDecoder<format::Type::INT32> decoder;
-    decoder.set_data((uint8_t*) encoding_buffer.data(), MAX_PAGE_HEADER_WRITER_SIZE + NUM_VALUES * 2);
-    decoder.get(decoding_buffer.data(), NUM_VALUES);
-
-    for(int i = 0; i < NUM_VALUES; i++) {
-        assert(values[i] == decoding_buffer[i]);
-    }
+    std::array<uint8_t, NUM_VALUES * 4 * 2> encoded_buffer;
+    DeltaBitPackEncoder<format::Type::INT32> encoder;
+//    encoder.put(values.data(), NUM_VALUES);
+//    encoder.flush_buffer((uint8_t*)encoded_buffer.data());
+//
+//    print_header(encoded_buffer.data());
+//
+//    std::array<int32_t, NUM_VALUES> decoding_buffer;
+//    DeltaBitPackDecoder<format::Type::INT32> decoder;
+//    decoder.set_data((uint8_t*) encoded_buffer.data(), encoded_buffer.size());
+//    decoder.get(decoding_buffer.data(), NUM_VALUES);
+//
+//    for(int i = 0; i < NUM_VALUES; i++) {
+//        assert(values[i] == decoding_buffer[i]);
+//    }
 }
-
-
-//void test_compression_overflow(format::CompressionCodec::type compression) {
-//    bytes raw(42, 0);
-//    auto c = compressor::make(compression);
-//    bytes compressed = c->compress(raw);
-//    BOOST_CHECK_THROW(c->decompress(compressed, bytes(raw.size() - 1, 0)), parquet_exception);
-//}
 
 BOOST_AUTO_TEST_CASE(encoding_ok) {
 //    test_encoding_happy_small();
     test_encoding_happy_large();
-//    test_compression_overflow(format::CompressionCodec::UNCOMPRESSED);
 }
 
 

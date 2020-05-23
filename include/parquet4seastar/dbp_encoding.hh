@@ -7,7 +7,7 @@
 // ----------------------------------------------------------------------
 // DELTA_BINARY_PACKED encoding
 
-const size_t MAX_PAGE_HEADER_WRITER_SIZE = 16; // TODO 32 for 64-bit values
+const size_t MAX_PAGE_HEADER_WRITER_SIZE = 32;
 const size_t MAX_BIT_WRITER_SIZE = 10 * 1024 * 1024;
 const size_t DEFAULT_BLOCK_SIZE = 128;
 const size_t DEFAULT_NUM_MINI_BLOCKS = 4;
@@ -148,15 +148,22 @@ private:
     size_t values_in_block;
     std::vector<int32_t> deltas;
     DeltaBitPackEncoderConverter<ParquetType> converter;
+public:
+//    std::vector<uint8_t> data_buffer{MAX_PAGE_HEADER_WRITER_SIZE};
+//    std::vector<uint8_t> header_buffer{MAX_BIT_WRITER_SIZE};
+    std::array<uint8_t, MAX_PAGE_HEADER_WRITER_SIZE> header_buffer;
+    std::array<uint8_t, MAX_BIT_WRITER_SIZE> data_buffer;
 
 public:
-    DeltaBitPackEncoder(uint8_t* header_output, int header_output_len, uint8_t* output, int output_len):
-            page_header_writer(header_output, header_output_len),
-            bit_writer(output, output_len) {
+    DeltaBitPackEncoder():
+            data_buffer{},
+            header_buffer{},
+            page_header_writer(header_buffer.data(), header_buffer.size()),
+            bit_writer(data_buffer.data(), data_buffer.size()) {
         block_size = DEFAULT_BLOCK_SIZE; // can write fewer values than block size for last block
         num_mini_blocks = DEFAULT_NUM_MINI_BLOCKS;
         mini_block_size = block_size / num_mini_blocks;
-//        assert(mini_block_size % 8 == 0); // TODO
+        assert(mini_block_size % 8 == 0);
         total_values = 0;
         first_value = 0;
         current_value = 0; // current value to keep adding deltas
@@ -201,14 +208,15 @@ public:
     }
  
     size_t encoded_header_size() const {
-        return page_header_writer.bytes_written()
+        return page_header_writer.bytes_written();
     }
  
     size_t encoded_data_size() const {
-        return bit_writer.bytes_written()
+        return bit_writer.bytes_written();
     }
 
-    void flush_buffer(uint8_t* output_buffer, size_t output_buffer_len) {
+    // TODO Are we assuming that output_buffer will fit the entire data?
+    size_t flush_buffer(uint8_t* sink) {
         // Write remaining values
         flush_block_values();
         // Write page header with total values
@@ -218,6 +226,9 @@ public:
         page_header_writer.Flush();
         bit_writer.Flush();
 
+        std::copy(header_buffer.begin(), header_buffer.begin() + encoded_header_size(), sink);
+        std::copy(data_buffer.begin(), data_buffer.begin() + encoded_data_size(), sink + encoded_header_size());
+
         // Reset state
         page_header_writer.Clear();
         bit_writer.Clear();
@@ -225,6 +236,8 @@ public:
         first_value = 0;
         current_value = 0;
         values_in_block = 0;
+
+        return encoded_header_size() + encoded_data_size();
     }
 };
 

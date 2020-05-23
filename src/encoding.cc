@@ -909,7 +909,7 @@ make_value_encoder<format::Type::BYTE_ARRAY>(format::Encoding::type);
 template std::unique_ptr<value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>>
 make_value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>(format::Encoding::type);
 
-class delta_bit_pack_encoder<format::Type::INT32>
+class delta_bit_pack_encoder
         : public value_encoder<format::Type::INT32> {
 public:
     using typename value_encoder<format::Type::INT32>::input_type;
@@ -924,11 +924,9 @@ public:
     void put_batch(const input_type data[], size_t size) override {
         encoder.put(data, size);
     }
-    size_t max_encoded_size() const override { return encoder.encoded_header_size() + encoder.encoded_data_size(); }
+    size_t max_encoded_size() const override { return MAX_PAGE_HEADER_WRITER_SIZE + MAX_BIT_WRITER_SIZE; }
     flush_result flush(byte sink[]) override {
-        std::copy(_buf.begin(), _buf.end(), sink);
-        size_t size = _buf.size();
-        _buf.clear();
+        size_t size = encoder.flush_buffer((uint8_t*) sink);
         return {size, encoder.encoding()};
     }
     std::optional<bytes_view> view_dict() override { return {}; }
