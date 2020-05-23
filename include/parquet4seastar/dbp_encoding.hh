@@ -149,8 +149,6 @@ private:
     std::vector<int32_t> deltas;
     DeltaBitPackEncoderConverter<ParquetType> converter;
 public:
-//    std::vector<uint8_t> data_buffer{MAX_PAGE_HEADER_WRITER_SIZE};
-//    std::vector<uint8_t> header_buffer{MAX_BIT_WRITER_SIZE};
     std::array<uint8_t, MAX_PAGE_HEADER_WRITER_SIZE> header_buffer;
     std::array<uint8_t, MAX_BIT_WRITER_SIZE> data_buffer;
 
