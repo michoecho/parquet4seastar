@@ -136,6 +136,10 @@ class DeltaBitPackEncoder {
         }
     }
 
+public:
+    uint8_t header_buffer[MAX_PAGE_HEADER_WRITER_SIZE];
+    uint8_t data_buffer[MAX_BIT_WRITER_SIZE];
+
 private:
     BitUtil::BitWriter bit_writer;
     BitUtil::BitWriter page_header_writer;
@@ -148,16 +152,11 @@ private:
     size_t values_in_block;
     std::vector<int32_t> deltas;
     DeltaBitPackEncoderConverter<ParquetType> converter;
-public:
-    std::array<uint8_t, MAX_PAGE_HEADER_WRITER_SIZE> header_buffer;
-    std::array<uint8_t, MAX_BIT_WRITER_SIZE> data_buffer;
 
 public:
     DeltaBitPackEncoder():
-            data_buffer{},
-            header_buffer{},
-            page_header_writer(header_buffer.data(), header_buffer.size()),
-            bit_writer(data_buffer.data(), data_buffer.size()) {
+            page_header_writer(header_buffer, MAX_PAGE_HEADER_WRITER_SIZE),
+            bit_writer(data_buffer, MAX_BIT_WRITER_SIZE) {
         block_size = DEFAULT_BLOCK_SIZE; // can write fewer values than block size for last block
         num_mini_blocks = DEFAULT_NUM_MINI_BLOCKS;
         mini_block_size = block_size / num_mini_blocks;
@@ -224,8 +223,8 @@ public:
         page_header_writer.Flush();
         bit_writer.Flush();
 
-        std::copy(header_buffer.begin(), header_buffer.begin() + encoded_header_size(), sink);
-        std::copy(data_buffer.begin(), data_buffer.begin() + encoded_data_size(), sink + encoded_header_size());
+        std::copy(header_buffer, header_buffer + encoded_header_size(), sink);
+        std::copy(data_buffer, data_buffer + encoded_data_size(), sink + encoded_header_size());
 
         // Reset state
         page_header_writer.Clear();
