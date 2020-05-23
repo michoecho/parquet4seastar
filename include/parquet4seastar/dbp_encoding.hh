@@ -8,11 +8,9 @@
 // DELTA_BINARY_PACKED encoding
 
 const size_t MAX_PAGE_HEADER_WRITER_SIZE = 32;
-const size_t MAX_BIT_WRITER_SIZE = 10 * 1024 * 1024;
+const size_t MAX_BIT_WRITER_SIZE = 10 * 1024; // 10 * 1024 * 1024
 const size_t DEFAULT_BLOCK_SIZE = 128;
 const size_t DEFAULT_NUM_MINI_BLOCKS = 4;
-//const size_t DEFAULT_BLOCK_SIZE = 8;
-//const size_t DEFAULT_NUM_MINI_BLOCKS = 1;
 
 namespace parquet4seastar {
 

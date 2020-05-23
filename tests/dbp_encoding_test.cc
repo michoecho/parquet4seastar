@@ -65,9 +65,9 @@ void print_header(uint8_t* header) {
     }
 }
 
-const int NUM_VALUES = 10000;
-
 void test_encoding_happy_large() {
+    const int NUM_VALUES = 10000;
+
     std::vector<int32_t> values;
 
     values.push_back(2*NUM_VALUES);
@@ -76,19 +76,19 @@ void test_encoding_happy_large() {
     }
     std::array<uint8_t, NUM_VALUES * 4 * 2> encoded_buffer;
     DeltaBitPackEncoder<format::Type::INT32> encoder;
-//    encoder.put(values.data(), NUM_VALUES);
-//    encoder.flush_buffer((uint8_t*)encoded_buffer.data());
-//
-//    print_header(encoded_buffer.data());
-//
-//    std::array<int32_t, NUM_VALUES> decoding_buffer;
-//    DeltaBitPackDecoder<format::Type::INT32> decoder;
-//    decoder.set_data((uint8_t*) encoded_buffer.data(), encoded_buffer.size());
-//    decoder.get(decoding_buffer.data(), NUM_VALUES);
-//
-//    for(int i = 0; i < NUM_VALUES; i++) {
-//        assert(values[i] == decoding_buffer[i]);
-//    }
+    encoder.put(values.data(), NUM_VALUES);
+    encoder.flush_buffer((uint8_t*)encoded_buffer.data());
+
+    print_header(encoded_buffer.data());
+
+    std::array<int32_t, NUM_VALUES> decoding_buffer;
+    DeltaBitPackDecoder<format::Type::INT32> decoder;
+    decoder.set_data((uint8_t*) encoded_buffer.data(), encoded_buffer.size());
+    decoder.get(decoding_buffer.data(), NUM_VALUES);
+
+    for(int i = 0; i < NUM_VALUES; i++) {
+        assert(values[i] == decoding_buffer[i]);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(encoding_ok) {
