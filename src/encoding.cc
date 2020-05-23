@@ -20,6 +20,7 @@
  */
 
 #include <parquet4seastar/encoding.hh>
+#include <parquet4seastar/dbp_encoding.hh>
 
 namespace parquet4seastar {
 
@@ -907,5 +908,32 @@ template std::unique_ptr<value_encoder<format::Type::BYTE_ARRAY>>
 make_value_encoder<format::Type::BYTE_ARRAY>(format::Encoding::type);
 template std::unique_ptr<value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>>
 make_value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>(format::Encoding::type);
+
+class delta_bit_pack_encoder<format::Type::INT32>
+        : public value_encoder<format::Type::INT32> {
+public:
+    using typename value_encoder<format::Type::INT32>::input_type;
+    using typename value_encoder<format::Type::INT32>::flush_result;
+private:
+    DeltaBitPackEncoder<format::Type::INT32> encoder;
+public:
+    bytes_view view() const {
+//        return {_buf.data(), _buf.size()};
+        throw parquet_exception("Not implemented");
+    }
+    void put_batch(const input_type data[], size_t size) override {
+        encoder.put(data, size);
+    }
+    size_t max_encoded_size() const override { return encoder.encoded_header_size() + encoder.encoded_data_size(); }
+    flush_result flush(byte sink[]) override {
+        std::copy(_buf.begin(), _buf.end(), sink);
+        size_t size = _buf.size();
+        _buf.clear();
+        return {size, encoder.encoding()};
+    }
+    std::optional<bytes_view> view_dict() override { return {}; }
+    uint64_t cardinality() override { return 0; }
+};
+
 
 } // namespace parquet4seastar

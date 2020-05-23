@@ -41,6 +41,8 @@ add_library (parquet4seastar STATIC
     include/parquet4seastar/column_chunk_writer.hh
     include/parquet4seastar/compression.hh
     include/parquet4seastar/cql_reader.hh
+    include/parquet4seastar/dbp_encoding.hh
+    include/parquet4seastar/dbp_decoding.hh
     include/parquet4seastar/exception.hh
     include/parquet4seastar/encoding.hh
     include/parquet4seastar/file_reader.hh
@@ -54,7 +56,6 @@ add_library (parquet4seastar STATIC
     include/parquet4seastar/thrift_serdes.hh
     include/parquet4seastar/writer_schema.hh
     include/parquet4seastar/y_combinator.hh
-    include/parquet4seastar/dbp_encoding.hh
     src/column_chunk_reader.cc
     src/compression.cc
     src/cql_reader.cc
@@ -65,7 +66,7 @@ add_library (parquet4seastar STATIC
     src/record_reader.cc
     src/reader_schema.cc
     src/thrift_serdes.cc
-    src/writer_schema.cc)
+    src/writer_schema.cc include/parquet4seastar/dbp_decoding.hh)
 
 target_compile_options(parquet4seastar PRIVATE
     -Wall
@@ -134,4 +135,4 @@ export(PACKAGE parquet4seastar)
 
 enable_testing ()
 add_subdirectory (tests)
-add_subdirectory (apps)
+#add_subdirectory (apps)

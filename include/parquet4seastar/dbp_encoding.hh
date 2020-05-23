@@ -7,14 +7,16 @@
 // ----------------------------------------------------------------------
 // DELTA_BINARY_PACKED encoding
 
-const size_t MAX_PAGE_HEADER_WRITER_SIZE = 32;
+const size_t MAX_PAGE_HEADER_WRITER_SIZE = 16; // TODO 32 for 64-bit values
 const size_t MAX_BIT_WRITER_SIZE = 10 * 1024 * 1024;
 const size_t DEFAULT_BLOCK_SIZE = 128;
 const size_t DEFAULT_NUM_MINI_BLOCKS = 4;
+//const size_t DEFAULT_BLOCK_SIZE = 8;
+//const size_t DEFAULT_NUM_MINI_BLOCKS = 1;
 
 namespace parquet4seastar {
 
-constexpr inline uint64_t required_bits(uint64_t max_n) {
+constexpr inline uint32_t required_bits(uint32_t max_n) {
     return (max_n == 0) ? 0 : seastar::log2floor(max_n) + 1;
 }
 
@@ -25,37 +27,37 @@ template<>
 struct DeltaBitPackEncoderConverter<format::Type::INT32> {
     using intput_type = int32_t;
 
-    inline int64_t as_int64_t(int32_t* values, size_t index) {
-        return (int64_t) values[index];
+    inline int32_t as_int32_t(const int32_t* values, size_t index) {
+        return (int32_t) values[index];
     }
 
-    inline int64_t subtract(int64_t left, int64_t right) {
+    inline int32_t subtract(int32_t left, int32_t right) {
         // It is okay for values to overflow, wrapping_sub wrapping around at the boundary
-        return (int64_t) ((int32_t)left - (int32_t)right);
+        return (int32_t) ((int32_t)left - (int32_t)right);
     }
 
-    inline uint64_t subtract_u64(int64_t left, int64_t right) {
+    inline uint32_t subtract_u64(int32_t left, int32_t right) {
         // Conversion of i32 -> u32 -> u64 is to avoid non-zero left most bytes in int
         // representation
-        return (uint64_t)(uint32_t)((int32_t)left - (int32_t)right);
+        return (uint32_t)(uint32_t)((int32_t)left - (int32_t)right);
     }
 };
 
 template<>
 struct DeltaBitPackEncoderConverter<format::Type::INT64> {
-    using intput_type = int64_t;
+    using intput_type = int32_t;
 
-    inline int64_t as_int64_t(int64_t* values, size_t index) {
+    inline int32_t as_int32_t(const int32_t* values, size_t index) {
         return values[index];
     }
 
-    inline int64_t subtract(int64_t left, int64_t right) {
-        // It is okay for values to overflow, wrapping_sub wrapping around at the boundary
+    inline int32_t subtract(int32_t left, int32_t right) {
+        // It is okay for values to overflow, they are wrapping around at the boundary
         return left - right;
     }
 
-    inline uint64_t subtract_u64(int64_t left, int64_t right) {
-        return (uint64_t) left - right;
+    inline uint32_t subtract_u64(int32_t left, int32_t right) {
+        return (uint32_t) (left - right);
     }
 };
 
@@ -69,11 +71,11 @@ class DeltaBitPackEncoder {
         // guarantees that writes will not fail.
 
         // Write the size of each block
-        page_header_writer.PutVlqInt((uint64_t)block_size);
+        page_header_writer.PutVlqInt((uint32_t)block_size);
         // Write the number of mini blocks
-        page_header_writer.PutVlqInt((uint64_t)num_mini_blocks);
+        page_header_writer.PutVlqInt((uint32_t)num_mini_blocks);
         // Write the number of all values (including non-encoded first value)
-        page_header_writer.PutVlqInt((uint64_t)total_values);
+        page_header_writer.PutVlqInt((uint32_t)total_values);
         // Write first value
         page_header_writer.PutZigZagVlqInt(first_value);
     }
@@ -84,7 +86,7 @@ class DeltaBitPackEncoder {
             return;
         }
 
-        int64_t min_delta = std::numeric_limits<int64_t>::min();
+        int32_t min_delta = std::numeric_limits<int32_t>::max();
         for (size_t i = 0; i < values_in_block; i++) {
             min_delta = std::min(min_delta, deltas[i]);
         }
@@ -104,7 +106,7 @@ class DeltaBitPackEncoder {
             }
 
             // Compute the max delta in current mini block
-            int64_t max_delta = std::numeric_limits<int64_t>::min();
+            int32_t max_delta = std::numeric_limits<int32_t>::min();
             for (size_t j = 0; j < n; j++) {
                 max_delta = std::max(max_delta, deltas[i * mini_block_size + j]);
             }
@@ -115,7 +117,7 @@ class DeltaBitPackEncoder {
 
             // Encode values in current mini block using min_delta and bit_width
             for (size_t j = 0; j<n; j++) {
-                uint64_t packed_value = converter.subtract_u64(deltas[i * mini_block_size + j], min_delta);
+                uint32_t packed_value = converter.subtract_u64(deltas[i * mini_block_size + j], min_delta);
                 bit_writer.PutValue(packed_value, bit_width);
             }
 
@@ -138,13 +140,13 @@ private:
     BitUtil::BitWriter bit_writer;
     BitUtil::BitWriter page_header_writer;
     size_t total_values;
-    int64_t first_value;
-    int64_t current_value;
+    int32_t first_value;
+    int32_t current_value;
     size_t block_size;
     size_t mini_block_size;
     size_t num_mini_blocks;
     size_t values_in_block;
-    std::vector<int64_t> deltas;
+    std::vector<int32_t> deltas;
     DeltaBitPackEncoderConverter<ParquetType> converter;
 
 public:
@@ -154,16 +156,16 @@ public:
         block_size = DEFAULT_BLOCK_SIZE; // can write fewer values than block size for last block
         num_mini_blocks = DEFAULT_NUM_MINI_BLOCKS;
         mini_block_size = block_size / num_mini_blocks;
-        assert(mini_block_size % 8 == 0);
+//        assert(mini_block_size % 8 == 0); // TODO
         total_values = 0;
         first_value = 0;
         current_value = 0; // current value to keep adding deltas
         values_in_block = 0; // will be at most block_size
-        deltas.reserve(block_size);
+        deltas.resize(block_size);
     }
 
     //    typename DeltaBitPackEncoderConverter<ParquetType>::input_type
-    void put(int64_t* values, size_t values_len) {
+    void put(const int32_t* values, size_t values_len) {
         if (!values_len) {
             return;
         }
@@ -171,7 +173,7 @@ public:
         size_t idx;
         // Define values to encode, initialize state
         if (total_values == 0) {
-            first_value = converter.as_int64_t(values, 0);
+            first_value = converter.as_int32_t(values, 0);
             current_value = first_value;
             idx = 1;
         } else {
@@ -183,7 +185,7 @@ public:
 
         // Write block
         while (idx < values_len) {
-            int64_t value = converter.as_int64_t(values, idx);
+            int32_t value = converter.as_int32_t(values, idx);
             deltas[values_in_block] = converter.subtract(value, current_value);
             current_value = value;
             idx++;
@@ -193,16 +195,20 @@ public:
             }
         }
     }
-
+ 
     inline format::Encoding::type encoding() const {
         return format::Encoding::DELTA_BINARY_PACKED;
     }
+ 
+    size_t encoded_header_size() const {
+        return page_header_writer.bytes_written()
+    }
+ 
+    size_t encoded_data_size() const {
+        return bit_writer.bytes_written()
+    }
 
-//    size_t estimated_data_encoded_size() const {
-//        return bit_writer.bytes_written()
-//    }
-
-    void flush_buffer() {
+    void flush_buffer(uint8_t* output_buffer, size_t output_buffer_len) {
         // Write remaining values
         flush_block_values();
         // Write page header with total values
