@@ -32,7 +32,7 @@
 
 namespace parquet4seastar {
 
-constexpr inline uint32_t bit_width(uint32_t max_n) {
+constexpr inline uint32_t bit_width(uint64_t max_n) {
     return (max_n == 0) ? 0 : seastar::log2floor(max_n) + 1;
 }
 
