@@ -141,23 +141,25 @@ public:
 template <format::Type::type ParquetType>
 class delta_binary_packed_decoder final : public decoder<ParquetType> {
     BitReader _decoder;
-    uint32_t _values_per_block;
-    uint32_t _num_mini_blocks;
-    uint32_t _values_remaining;
-    int32_t _last_value;
+    uint64_t _values_per_block;
+    uint64_t _num_mini_blocks;
+    uint64_t _values_remaining;
+    uint64_t _last_value;
 
-    int32_t _min_delta;
+    uint64_t _min_delta;
     buffer _delta_bit_widths;
 
     uint8_t _delta_bit_width;
-    uint32_t _mini_block_idx;
+    uint64_t _mini_block_idx;
     uint64_t _values_current_mini_block;
-    uint32_t _values_per_mini_block;
+    uint64_t _values_per_mini_block;
 private:
     void init_block() {
-        if (!_decoder.GetZigZagVlqInt(&_min_delta)) {
+        int64_t min_delta;
+        if (!_decoder.GetZigZagVlqInt(&min_delta)) {
             throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED block header");
         }
+        _min_delta = min_delta;
 
         for (uint32_t i = 0; i < _num_mini_blocks; ++i) {
             if (!_decoder.GetAligned<uint8_t>(1, _delta_bit_widths.data() + i)) {
@@ -188,11 +190,12 @@ public:
         if (!_decoder.GetVlqInt(&_values_remaining)) {
             throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED header");
         }
-        if (!_decoder.GetZigZagVlqInt(&_last_value)) {
+        int64_t first_value;
+        if (!_decoder.GetZigZagVlqInt(&first_value)) {
             throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED header");
         }
-
-        if (_delta_bit_widths.size() < static_cast<uint32_t>(_num_mini_blocks)) {
+        _last_value = first_value;
+        if (_delta_bit_widths.size() < _num_mini_blocks) {
             _delta_bit_widths = buffer(_num_mini_blocks);
         }
 
@@ -224,12 +227,12 @@ public:
             }
             // TODO: an optimized implementation would decode the entire
             // miniblock at once.
-            int64_t delta;
+            uint64_t delta;
             if (!_decoder.GetValue(_delta_bit_width, &delta)) {
                 throw parquet_exception("Unexpected end of data in DELTA_BINARY_PACKED");
             }
             delta += _min_delta;
-            _last_value += static_cast<int32_t>(delta);
+            _last_value += delta;
             --_values_current_mini_block;
         }
         return i;
@@ -237,7 +240,7 @@ public:
 
     void eat_final_padding() {
         while (_values_current_mini_block > 0) {
-            int64_t unused_delta;
+            uint64_t unused_delta;
             if (!_decoder.GetValue(_delta_bit_width, &unused_delta)) {
                 throw parquet_exception("Unexpected end of data in DELTA_BINARY_PACKED");
             }

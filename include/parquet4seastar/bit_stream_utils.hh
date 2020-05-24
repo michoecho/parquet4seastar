@@ -68,7 +68,7 @@ class BitWriter {
   int buffer_len() const { return max_bytes_; }
 
   /// Writes a value to buffered_values_, flushing to buffer_ if necessary.  This is bit
-  /// packed.  Returns false if there was not enough space. num_bits must be <= 32.
+  /// packed.  Returns false if there was not enough space.
   bool PutValue(uint64_t v, int num_bits);
 
   /// Writes v to the next aligned byte using num_bytes. If T is larger than
@@ -81,10 +81,10 @@ class BitWriter {
   /// room.  The value is written byte aligned.
   /// For more details on vlq:
   /// en.wikipedia.org/wiki/Variable-length_quantity
-  bool PutVlqInt(uint32_t v);
+  bool PutVlqInt(uint64_t v);
 
   // Writes an int zigzag encoded.
-  bool PutZigZagVlqInt(int32_t v);
+  bool PutZigZagVlqInt(int64_t v);
 
   /// Get a pointer to the next aligned byte and advance the underlying buffer
   /// by num_bytes.
@@ -158,8 +158,16 @@ class BitReader {
   /// the buffer.
   bool GetVlqInt(uint32_t* v);
 
+  /// Reads a vlq encoded int from the stream.  The encoded int must start at
+  /// the beginning of a byte. Return false if there were not enough bytes in
+  /// the buffer.
+  bool GetVlqInt(uint64_t* v);
+
   // Reads a zigzag encoded int `into` v.
   bool GetZigZagVlqInt(int32_t* v);
+
+  // Reads a zigzag encoded int `into` v.
+  bool GetZigZagVlqInt(int64_t* v);
 
   /// Returns the number of bytes left in the stream, not including the current
   /// byte (i.e., there may be an additional fraction of a byte).
@@ -167,9 +175,6 @@ class BitReader {
     return max_bytes_ -
            (byte_offset_ + static_cast<int>(BitUtil::BytesForBits(bit_offset_)));
   }
-
-  /// Maximum byte length of a vlq encoded int
-  static constexpr int kMaxVlqByteLength = 5;
 
  private:
   const uint8_t* buffer_;
@@ -184,9 +189,7 @@ class BitReader {
 };
 
 inline bool BitWriter::PutValue(uint64_t v, int num_bits) {
-  // TODO: revisit this limit if necessary (can be raised to 64 by fixing some edge cases)
-  assert(num_bits <= 32);
-  assert(v >> num_bits == 0);
+  assert(num_bits <= 64);
 
   if (__builtin_expect(byte_offset_ * 8 + bit_offset_ + num_bits > max_bytes_ * 8, true))
     return false;
@@ -200,9 +203,10 @@ inline bool BitWriter::PutValue(uint64_t v, int num_bits) {
     buffered_values_ = 0;
     byte_offset_ += 8;
     bit_offset_ -= 64;
-    buffered_values_ = v >> (num_bits - bit_offset_);
+    int bits_used = num_bits - bit_offset_;
+    buffered_values_ = (bits_used == 64) ? 0 : (v >> bits_used);
   }
-  assert(bit_offset_ <= 64);
+  assert(bit_offset_ < 64);
   return true;
 }
 
@@ -265,12 +269,14 @@ inline void GetValue_(int num_bits, T* v, int max_bytes, const uint8_t* buffer,
 #pragma warning(disable : 4800 4805)
 #endif
     // Read bits of v that crossed into new buffered_values_
-    *v = *v | static_cast<T>(BitUtil::TrailingBits(*buffered_values, *bit_offset)
-                             << (num_bits - *bit_offset));
+    if (num_bits - *bit_offset < 64) {
+      *v = *v | static_cast<T>(BitUtil::TrailingBits(*buffered_values, *bit_offset)
+                               << (num_bits - *bit_offset));
+    }
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
-    assert(*bit_offset <= 64);
+    assert(*bit_offset < 64);
   }
 }
 
@@ -284,8 +290,6 @@ inline bool BitReader::GetValue(int num_bits, T* v) {
 template <typename T>
 inline int BitReader::GetBatch(int num_bits, T* v, int batch_size) {
   assert(buffer_ != NULL);
-  // TODO: revisit this limit if necessary
-  assert(num_bits <= 32);
   assert(num_bits <= static_cast<int>(sizeof(T) * 8));
 
   int bit_offset = bit_offset_;
@@ -308,35 +312,37 @@ inline int BitReader::GetBatch(int num_bits, T* v, int batch_size) {
     }
   }
 
-  if (sizeof(T) == 4) {
-    int num_unpacked =
-        internal::unpack32(reinterpret_cast<const uint32_t*>(buffer + byte_offset),
-                           reinterpret_cast<uint32_t*>(v + i), batch_size - i, num_bits);
-    i += num_unpacked;
-    byte_offset += num_unpacked * num_bits / 8;
-  } else {
-    const int buffer_size = 1024;
-    uint32_t unpack_buffer[buffer_size];
-    while (i < batch_size) {
-      int unpack_size = std::min(buffer_size, batch_size - i);
+  if (num_bits <= 32) {
+    if (sizeof(T) == 4) {
       int num_unpacked =
           internal::unpack32(reinterpret_cast<const uint32_t*>(buffer + byte_offset),
-                             unpack_buffer, unpack_size, num_bits);
-      if (num_unpacked == 0) {
-        break;
-      }
-      for (int k = 0; k < num_unpacked; ++k) {
+                             reinterpret_cast<uint32_t*>(v + i), batch_size - i, num_bits);
+      i += num_unpacked;
+      byte_offset += num_unpacked * num_bits / 8;
+    } else {
+      const int buffer_size = 1024;
+      uint32_t unpack_buffer[buffer_size];
+      while (i < batch_size) {
+        int unpack_size = std::min(buffer_size, batch_size - i);
+        int num_unpacked =
+            internal::unpack32(reinterpret_cast<const uint32_t*>(buffer + byte_offset),
+                               unpack_buffer, unpack_size, num_bits);
+        if (num_unpacked == 0) {
+          break;
+        }
+        for (int k = 0; k < num_unpacked; ++k) {
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4800)
 #endif
-        v[i + k] = static_cast<T>(unpack_buffer[k]);
+          v[i + k] = static_cast<T>(unpack_buffer[k]);
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+        }
+        i += num_unpacked;
+        byte_offset += num_unpacked * num_bits / 8;
       }
-      i += num_unpacked;
-      byte_offset += num_unpacked * num_bits / 8;
     }
   }
 
@@ -386,9 +392,9 @@ inline bool BitReader::GetAligned(int num_bytes, T* v) {
   return true;
 }
 
-inline bool BitWriter::PutVlqInt(uint32_t v) {
+inline bool BitWriter::PutVlqInt(uint64_t v) {
   bool result = true;
-  while ((v & 0xFFFFFF80UL) != 0UL) {
+  while ((v & ~uint64_t(0x7F)) != 0UL) {
     result &= PutAligned<uint8_t>(static_cast<uint8_t>((v & 0x7F) | 0x80), 1);
     v >>= 7;
   }
@@ -399,7 +405,7 @@ inline bool BitWriter::PutVlqInt(uint32_t v) {
 inline bool BitReader::GetVlqInt(uint32_t* v) {
   uint32_t tmp = 0;
 
-  for (int i = 0; i < kMaxVlqByteLength; i++) {
+  for (int i = 0; i < 5; i++) {
     uint8_t byte = 0;
     if (__builtin_expect(!GetAligned<uint8_t>(1, &byte), false)) {
       return false;
@@ -415,15 +421,41 @@ inline bool BitReader::GetVlqInt(uint32_t* v) {
   return false;
 }
 
-inline bool BitWriter::PutZigZagVlqInt(int32_t v) {
-  auto u_v = static_cast<uint32_t>(v);
-  return PutVlqInt((u_v << 1) ^ (v >> 31));
+inline bool BitReader::GetVlqInt(uint64_t* v) {
+  uint64_t tmp = 0;
+
+  for (int i = 0; i < 10; i++) {
+    uint8_t byte = 0;
+    if (__builtin_expect(!GetAligned<uint8_t>(1, &byte), false)) {
+      return false;
+    }
+    tmp |= static_cast<uint64_t>(byte & 0x7F) << (7 * i);
+
+    if ((byte & 0x80) == 0) {
+      *v = tmp;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+inline bool BitWriter::PutZigZagVlqInt(int64_t v) {
+  auto u_v = static_cast<uint64_t>(v);
+  return PutVlqInt((u_v << 1) ^ (v >> 63));
 }
 
 inline bool BitReader::GetZigZagVlqInt(int32_t* v) {
   uint32_t u;
   if (!GetVlqInt(&u)) return false;
   *v = (u >> 1) ^ -(static_cast<int32_t>(u & 1));
+  return true;
+}
+
+inline bool BitReader::GetZigZagVlqInt(int64_t* v) {
+  uint64_t u;
+  if (!GetVlqInt(&u)) return false;
+  *v = (u >> 1) ^ -(static_cast<int64_t>(u & 1));
   return true;
 }
 
