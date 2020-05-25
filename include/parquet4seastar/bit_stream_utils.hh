@@ -59,12 +59,20 @@ class BitWriter {
     bit_offset_ = 0;
   }
 
+  // Updates buffer mid-operation. Preserves writer's state.
+  void update_buffer(uint8_t* buffer, int buffer_len) {
+    buffer_ = buffer;
+    max_bytes_ = buffer_len;
+  }
+
   /// The number of current bytes written, including the current byte (i.e. may include a
   /// fraction of a byte). Includes buffered values.
   int bytes_written() const {
     return byte_offset_ + static_cast<int>(BitUtil::BytesForBits(bit_offset_));
   }
+
   uint8_t* buffer() const { return buffer_; }
+
   int buffer_len() const { return max_bytes_; }
 
   /// Writes a value to buffered_values_, flushing to buffer_ if necessary.  This is bit

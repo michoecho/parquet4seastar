@@ -164,13 +164,13 @@ public:
         }
 
         std::cout << "HEADER READ\n";
-        std::bitset<8> x(block_size);
+        std::bitset<64> x(block_size);
         std::cout << "block_size " << x << '\n';
-        std::bitset<8> y(num_mini_blocks);
+        std::bitset<64> y(num_mini_blocks);
         std::cout << "num_mini_blocks " << y << '\n';
-        std::bitset<8> w(num_values);
+        std::bitset<64> w(num_values);
         std::cout << "num_values " << w << '\n';
-        std::bitset<8> z(first_value);
+        std::bitset<64> z(first_value);
         std::cout << "first_value " << z << '\n';
 
         // Reset decoding state
@@ -180,7 +180,7 @@ public:
         values_current_mini_block = 0;
 
         values_per_mini_block = (size_t) (block_size / num_mini_blocks);
-//        assert(values_per_mini_block % 8 == 0); // TODO
+        assert(values_per_mini_block % 8 == 0);
     }
 
     size_t get(INPUT_TYPE* buffer, size_t buffer_len) {

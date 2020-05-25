@@ -87,6 +87,7 @@ void test_encoding_happy_large() {
     decoder.get(decoding_buffer.data(), NUM_VALUES);
 
     for(int i = 0; i < NUM_VALUES; i++) {
+        std::cout << i << "-th value is " << decoding_buffer[i] << " and should be " << values[i] << std::endl;
         assert(values[i] == decoding_buffer[i]);
     }
 }

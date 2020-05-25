@@ -8,11 +8,85 @@
 // DELTA_BINARY_PACKED encoding
 
 const size_t MAX_PAGE_HEADER_WRITER_SIZE = 32;
-const size_t MAX_BIT_WRITER_SIZE = 10 * 1024; // 10 * 1024 * 1024
+const size_t MAX_BIT_WRITER_SIZE = 10 * 1024 * 1024;
+//const size_t INITIAL_BIT_WRITER_SIZE = 1024;
+const size_t INITIAL_BIT_WRITER_SIZE = 1;
 const size_t DEFAULT_BLOCK_SIZE = 128;
 const size_t DEFAULT_NUM_MINI_BLOCKS = 4;
 
 namespace parquet4seastar {
+
+class BitWriterVec {
+private:
+    BitUtil::BitWriter bit_writer;
+    std::vector<uint8_t> buffer_{0};
+
+public:
+    BitWriterVec(size_t initial_size): bit_writer(buffer_.data(), buffer_.size()) {
+        buffer_.resize(initial_size);
+        bit_writer.update_buffer(buffer_.data(), buffer_.size());
+    }
+
+    inline void Clear() {
+        bit_writer.Clear();
+    }
+
+    inline int bytes_written() const {
+        return bit_writer.bytes_written();
+    }
+
+    inline uint8_t *buffer() const {
+        return bit_writer.buffer();
+    }
+
+    inline int buffer_len() const {
+        return bit_writer.buffer_len();
+    }
+
+    inline void PutValue(uint64_t v, int num_bits) {
+        while(!bit_writer.PutValue(v, num_bits)) {
+            double_buffer();
+        }
+    }
+
+    template<typename T>
+    inline void PutAligned(T v, int num_bytes) {
+        while(!bit_writer.PutAligned(v, num_bytes)) {
+            double_buffer();
+        }
+    }
+
+    inline void PutVlqInt(uint32_t v) {
+        while(!bit_writer.PutVlqInt(v)) {
+            double_buffer();
+        }
+    }
+
+    inline void PutZigZagVlqInt(int32_t v) {
+        while(!bit_writer.PutZigZagVlqInt(v)) {
+            double_buffer();
+        }
+    }
+
+    // TODO take care of this, can be unreliable
+    inline uint8_t *GetNextBytePtr(int num_bytes) {
+        uint8_t* next_byte_ptr = bit_writer.GetNextBytePtr(num_bytes);
+        while(!next_byte_ptr) {
+            double_buffer();
+            next_byte_ptr = bit_writer.GetNextBytePtr(num_bytes);
+        }
+        return next_byte_ptr;
+    }
+
+    inline void Flush(bool align = false) {
+        bit_writer.Flush(align);
+    }
+private:
+    inline void double_buffer() {
+        buffer_.resize(buffer_.size() * 2);
+        bit_writer.update_buffer(buffer_.data(), buffer_.size());
+    }
+};
 
 constexpr inline uint32_t required_bits(uint32_t max_n) {
     return (max_n == 0) ? 0 : seastar::log2floor(max_n) + 1;
@@ -134,13 +208,9 @@ class DeltaBitPackEncoder {
         }
     }
 
-public:
-    uint8_t header_buffer[MAX_PAGE_HEADER_WRITER_SIZE];
-    uint8_t data_buffer[MAX_BIT_WRITER_SIZE];
-
 private:
-    BitUtil::BitWriter bit_writer;
-    BitUtil::BitWriter page_header_writer;
+    BitWriterVec bit_writer;
+    BitWriterVec page_header_writer;
     size_t total_values;
     int32_t first_value;
     int32_t current_value;
@@ -153,8 +223,8 @@ private:
 
 public:
     DeltaBitPackEncoder():
-            page_header_writer(header_buffer, MAX_PAGE_HEADER_WRITER_SIZE),
-            bit_writer(data_buffer, MAX_BIT_WRITER_SIZE) {
+            page_header_writer(MAX_PAGE_HEADER_WRITER_SIZE),
+            bit_writer(INITIAL_BIT_WRITER_SIZE) {
         block_size = DEFAULT_BLOCK_SIZE; // can write fewer values than block size for last block
         num_mini_blocks = DEFAULT_NUM_MINI_BLOCKS;
         mini_block_size = block_size / num_mini_blocks;
@@ -221,8 +291,8 @@ public:
         page_header_writer.Flush();
         bit_writer.Flush();
 
-        std::copy(header_buffer, header_buffer + encoded_header_size(), sink);
-        std::copy(data_buffer, data_buffer + encoded_data_size(), sink + encoded_header_size());
+        std::copy(page_header_writer.buffer(), page_header_writer.buffer() + encoded_header_size(), sink);
+        std::copy(bit_writer.buffer(), bit_writer.buffer() + encoded_data_size(), sink + encoded_header_size());
 
         // Reset state
         page_header_writer.Clear();
