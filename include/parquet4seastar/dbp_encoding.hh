@@ -1,18 +1,27 @@
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
+
+// From Apache Impala (incubating) as of 2016-01-29
+
 #include <parquet4seastar/bit_stream_utils.hh>
 #include <sstream>
 #include <parquet4seastar/exception.hh>
 #include <seastar/core/bitops.hh>
 #include <parquet4seastar/parquet_types.h>
-
-// ----------------------------------------------------------------------
-// DELTA_BINARY_PACKED encoding
-
-const size_t MAX_PAGE_HEADER_WRITER_SIZE = 32;
-const size_t MAX_BIT_WRITER_SIZE = 10 * 1024 * 1024;
-//const size_t INITIAL_BIT_WRITER_SIZE = 1024;
-const size_t INITIAL_BIT_WRITER_SIZE = 1;
-const size_t DEFAULT_BLOCK_SIZE = 128;
-const size_t DEFAULT_NUM_MINI_BLOCKS = 4;
 
 namespace parquet4seastar {
 
@@ -135,6 +144,14 @@ struct DeltaBitPackEncoderConverter<format::Type::INT64> {
 
 template <format::Type::type ParquetType>
 class DeltaBitPackEncoder {
+    static_assert(ParquetType == format::Type::INT32 || ParquetType == format::Type::INT64);
+
+    static const size_t MAX_PAGE_HEADER_WRITER_SIZE = 32;
+    static const size_t MAX_BIT_WRITER_SIZE = 10 * 1024 * 1024;
+    static const size_t INITIAL_BIT_WRITER_SIZE = 1024;
+    static const size_t DEFAULT_BLOCK_SIZE = 128;
+    static const size_t DEFAULT_NUM_MINI_BLOCKS = 4;
+
     /// Writes page header for blocks, this method is invoked when we are done encoding
     /// values. It is also okay to encode when no values have been provided
     void write_page_header() {
@@ -167,14 +184,14 @@ class DeltaBitPackEncoder {
         bit_writer.PutZigZagVlqInt(min_delta);
 
         // Create the pointer for miniblock widths array
-        uint8_t* mini_block_widths = bit_writer.GetNextBytePtr(num_mini_blocks);
+        uint8_t mini_block_widths[num_mini_blocks];
 
         for(size_t i = 0; i < num_mini_blocks; i++) {
             // Find how many values we need to encode - either block size or whatever
             // values left
             size_t n = std::min(mini_block_size, values_in_block);
             if (n == 0) {
-                break; // TODO shouldn't we put zeros as mini_block_widths of remaining mini_blocks?
+                break;
             }
 
             // Compute the max delta in current mini block
@@ -184,22 +201,30 @@ class DeltaBitPackEncoder {
             }
 
             // Compute bit width to store (max_delta - min_delta)
-            size_t bit_width = required_bits(converter.subtract_u64(max_delta, min_delta));
-            mini_block_widths[i] = (uint8_t)bit_width;
+            mini_block_widths[i] = (uint8_t) required_bits(converter.subtract_u64(max_delta, min_delta));
+            bit_writer.PutAligned(mini_block_widths[i], 1);
+        }
+
+        for(size_t i = 0; i < num_mini_blocks; i++) {
+            size_t n = std::min(mini_block_size, values_in_block);
+            if (n == 0) {
+                break; // TODO shouldn't we put zeros as mini_block_widths of remaining mini_blocks?
+            }
 
             // Encode values in current mini block using min_delta and bit_width
             for (size_t j = 0; j<n; j++) {
                 uint32_t packed_value = converter.subtract_u64(deltas[i * mini_block_size + j], min_delta);
-                bit_writer.PutValue(packed_value, bit_width);
+                bit_writer.PutValue(packed_value, mini_block_widths[i]);
             }
 
             // Pad the last block (n < mini_block_size)
             for (size_t _ = n; _ < mini_block_size; _++) {
-                bit_writer.PutValue(0, bit_width);
+                bit_writer.PutValue(0, mini_block_widths[i]);
             }
 
             values_in_block -= n;
         }
+
 
         if (values_in_block != 0) {
             std::ostringstream msg;

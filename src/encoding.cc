@@ -21,6 +21,7 @@
 
 #include <parquet4seastar/encoding.hh>
 #include <parquet4seastar/dbp_encoding.hh>
+#include <parquet4seastar/dbp_decoding.hh>
 
 namespace parquet4seastar {
 
@@ -918,13 +919,14 @@ private:
     DeltaBitPackEncoder<format::Type::INT32> encoder;
 public:
     bytes_view view() const {
-//        return {_buf.data(), _buf.size()};
         throw parquet_exception("Not implemented");
     }
     void put_batch(const input_type data[], size_t size) override {
         encoder.put(data, size);
     }
-    size_t max_encoded_size() const override { return MAX_PAGE_HEADER_WRITER_SIZE + MAX_BIT_WRITER_SIZE; }
+    size_t max_encoded_size() const override {
+        return encoder.encoded_header_size() + encoder.encoded_data_size();
+    }
     flush_result flush(byte sink[]) override {
         size_t size = encoder.flush_buffer((uint8_t*) sink);
         return {size, encoder.encoding()};
@@ -933,5 +935,19 @@ public:
     uint64_t cardinality() override { return 0; }
 };
 
+class delta_bit_pack_decoder
+        : public decoder<format::Type::INT32> {
+private:
+    DeltaBitPackDecoder<format::Type::INT32> decoder;
+public:
+    void reset(std::basic_string_view<uint8_t> buf) override {
+        decoder.set_data(buf.data(), buf.size());
+    }
+    size_t read_batch(size_t n, output_type *out) override {
+        return decoder.get(out, n);
+    }
+    ~delta_bit_pack_decoder() override = default;
+    void reset_dict(output_type *dictionary, size_t dictionary_size) override {}
+};
 
 } // namespace parquet4seastar
