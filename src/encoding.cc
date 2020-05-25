@@ -360,6 +360,48 @@ public:
     }
 };
 
+template<format::Type::type ParquetType>
+class delta_bit_pack_encoder
+        : public value_encoder<format::Type::INT32> {
+public:
+    using typename value_encoder<format::Type::INT32>::input_type;
+    using typename value_encoder<format::Type::INT32>::flush_result;
+private:
+    DeltaBitPackEncoder<format::Type::INT32> encoder;
+public:
+    bytes_view view() const {
+        throw parquet_exception("Not implemented");
+    }
+    void put_batch(const input_type data[], size_t size) override {
+        encoder.put(data, size);
+    }
+    size_t max_encoded_size() const override {
+        return encoder.encoded_header_size() + encoder.encoded_data_size();
+    }
+    flush_result flush(byte sink[]) override {
+        size_t size = encoder.flush_buffer((uint8_t*) sink);
+        return {size, encoder.encoding()};
+    }
+    std::optional<bytes_view> view_dict() override { return {}; }
+    uint64_t cardinality() override { return 0; }
+};
+
+template<format::Type::type ParquetType>
+class delta_bit_pack_decoder
+        : public decoder<format::Type::INT32> {
+private:
+    DeltaBitPackDecoder<format::Type::INT32> decoder;
+public:
+    void reset(std::basic_string_view<uint8_t> buf) override {
+        decoder.set_data(buf.data(), buf.size());
+    }
+    size_t read_batch(size_t n, output_type *out) override {
+        return decoder.get(out, n);
+    }
+    void reset_dict(output_type *dictionary, size_t dictionary_size) override {}
+};
+
+
 template <format::Type::type ParquetType>
 class byte_stream_split_decoder final : public decoder<ParquetType> {
     bytes_view _data;
@@ -551,8 +593,11 @@ void value_decoder<ParquetType>::reset(bytes_view buf, format::Encoding::type en
             }
             break;
         case format::Encoding::DELTA_BINARY_PACKED:
-            if constexpr (ParquetType == format::Type::INT32 || ParquetType == format::Type::INT64) {
-                _decoder = std::make_unique<delta_binary_packed_decoder<ParquetType>>();
+            if constexpr (ParquetType == format::Type::INT32) {
+                _decoder = std::make_unique<delta_bit_pack_decoder<ParquetType>>();
+            } else if constexpr (ParquetType == format::Type::INT64) {
+//                _decoder = std::make_unique<delta_bit_pack_decoder>();
+                throw parquet_exception::corrupted_file("DELTA_BINARY_PACKED is valid only for INT32 and INT64");
             } else {
                 throw parquet_exception::corrupted_file("DELTA_BINARY_PACKED is valid only for INT32 and INT64");
             }
@@ -871,9 +916,10 @@ make_value_encoder(format::Encoding::type encoding) {
         throw invalid();
     } else if (encoding == format::Encoding::DELTA_BINARY_PACKED) {
         if constexpr (ParquetType == format::Type::INT32) {
-            throw not_implemented();
+            return std::make_unique<delta_bit_pack_encoder<ParquetType>>();
         }
         if constexpr (ParquetType == format::Type::INT64) {
+//            return std::make_unique<delta_bit_pack_encoder<ParquetType>>();
             throw not_implemented();
         }
         throw invalid();
@@ -909,45 +955,5 @@ template std::unique_ptr<value_encoder<format::Type::BYTE_ARRAY>>
 make_value_encoder<format::Type::BYTE_ARRAY>(format::Encoding::type);
 template std::unique_ptr<value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>>
 make_value_encoder<format::Type::FIXED_LEN_BYTE_ARRAY>(format::Encoding::type);
-
-class delta_bit_pack_encoder
-        : public value_encoder<format::Type::INT32> {
-public:
-    using typename value_encoder<format::Type::INT32>::input_type;
-    using typename value_encoder<format::Type::INT32>::flush_result;
-private:
-    DeltaBitPackEncoder<format::Type::INT32> encoder;
-public:
-    bytes_view view() const {
-        throw parquet_exception("Not implemented");
-    }
-    void put_batch(const input_type data[], size_t size) override {
-        encoder.put(data, size);
-    }
-    size_t max_encoded_size() const override {
-        return encoder.encoded_header_size() + encoder.encoded_data_size();
-    }
-    flush_result flush(byte sink[]) override {
-        size_t size = encoder.flush_buffer((uint8_t*) sink);
-        return {size, encoder.encoding()};
-    }
-    std::optional<bytes_view> view_dict() override { return {}; }
-    uint64_t cardinality() override { return 0; }
-};
-
-class delta_bit_pack_decoder
-        : public decoder<format::Type::INT32> {
-private:
-    DeltaBitPackDecoder<format::Type::INT32> decoder;
-public:
-    void reset(std::basic_string_view<uint8_t> buf) override {
-        decoder.set_data(buf.data(), buf.size());
-    }
-    size_t read_batch(size_t n, output_type *out) override {
-        return decoder.get(out, n);
-    }
-    ~delta_bit_pack_decoder() override = default;
-    void reset_dict(output_type *dictionary, size_t dictionary_size) override {}
-};
 
 } // namespace parquet4seastar
