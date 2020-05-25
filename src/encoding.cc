@@ -362,12 +362,12 @@ public:
 
 template<format::Type::type ParquetType>
 class delta_bit_pack_encoder
-        : public value_encoder<format::Type::INT32> {
+        : public value_encoder<ParquetType> {
 public:
-    using typename value_encoder<format::Type::INT32>::input_type;
-    using typename value_encoder<format::Type::INT32>::flush_result;
+    using typename value_encoder<ParquetType>::input_type;
+    using typename value_encoder<ParquetType>::flush_result;
 private:
-    DeltaBitPackEncoder<format::Type::INT32> encoder;
+    DeltaBitPackEncoder<ParquetType> encoder;
 public:
     bytes_view view() const {
         throw parquet_exception("Not implemented");
@@ -388,9 +388,11 @@ public:
 
 template<format::Type::type ParquetType>
 class delta_bit_pack_decoder
-        : public decoder<format::Type::INT32> {
+        : public decoder<ParquetType> {
+public:
+    using typename decoder<ParquetType>::output_type;
 private:
-    DeltaBitPackDecoder<format::Type::INT32> decoder;
+    DeltaBitPackDecoder<ParquetType> decoder;
 public:
     void reset(std::basic_string_view<uint8_t> buf) override {
         decoder.set_data(buf.data(), buf.size());
@@ -593,11 +595,8 @@ void value_decoder<ParquetType>::reset(bytes_view buf, format::Encoding::type en
             }
             break;
         case format::Encoding::DELTA_BINARY_PACKED:
-            if constexpr (ParquetType == format::Type::INT32) {
+            if constexpr (ParquetType == format::Type::INT32 || ParquetType == format::Type::INT64) {
                 _decoder = std::make_unique<delta_bit_pack_decoder<ParquetType>>();
-            } else if constexpr (ParquetType == format::Type::INT64) {
-//                _decoder = std::make_unique<delta_bit_pack_decoder>();
-                throw parquet_exception::corrupted_file("DELTA_BINARY_PACKED is valid only for INT32 and INT64");
             } else {
                 throw parquet_exception::corrupted_file("DELTA_BINARY_PACKED is valid only for INT32 and INT64");
             }
@@ -915,12 +914,8 @@ make_value_encoder(format::Encoding::type encoding) {
     } else if (encoding == format::Encoding::BIT_PACKED) {
         throw invalid();
     } else if (encoding == format::Encoding::DELTA_BINARY_PACKED) {
-        if constexpr (ParquetType == format::Type::INT32) {
+        if constexpr (ParquetType == format::Type::INT32 || ParquetType == format::Type::INT64) {
             return std::make_unique<delta_bit_pack_encoder<ParquetType>>();
-        }
-        if constexpr (ParquetType == format::Type::INT64) {
-//            return std::make_unique<delta_bit_pack_encoder<ParquetType>>();
-            throw not_implemented();
         }
         throw invalid();
     } else if (encoding == format::Encoding::DELTA_LENGTH_BYTE_ARRAY) {

@@ -170,8 +170,9 @@ class RleEncoder {
         1 +
         static_cast<int>(BitUtil::BytesForBits(MAX_VALUES_PER_LITERAL_RUN * bit_width));
     /// Up to kMaxVlqByteLength indicator and a single 'bit_width' value.
-    int max_repeated_run_size = BitUtil::BitReader::kMaxVlqByteLength +
-                                static_cast<int>(BitUtil::BytesForBits(bit_width));
+    int max_repeated_run_size
+        = 5 // Max 32 bit VLQ size
+        + static_cast<int>(BitUtil::BytesForBits(bit_width));
     return std::max(max_literal_run_size, max_repeated_run_size);
   }
 
