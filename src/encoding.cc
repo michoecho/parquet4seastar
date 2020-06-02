@@ -141,23 +141,25 @@ public:
 template <format::Type::type ParquetType>
 class delta_binary_packed_decoder final : public decoder<ParquetType> {
     BitReader _decoder;
-    uint32_t _values_per_block;
-    uint32_t _num_mini_blocks;
-    uint32_t _values_remaining;
-    int32_t _last_value;
+    uint64_t _values_per_block;
+    uint64_t _num_mini_blocks;
+    uint64_t _values_remaining;
+    uint64_t _last_value;
 
-    int32_t _min_delta;
+    uint64_t _min_delta;
     buffer _delta_bit_widths;
 
     uint8_t _delta_bit_width;
-    uint32_t _mini_block_idx;
+    uint64_t _mini_block_idx;
     uint64_t _values_current_mini_block;
-    uint32_t _values_per_mini_block;
+    uint64_t _values_per_mini_block;
 private:
     void init_block() {
-        if (!_decoder.GetZigZagVlqInt(&_min_delta)) {
+        int64_t min_delta;
+        if (!_decoder.GetZigZagVlqInt(&min_delta)) {
             throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED block header");
         }
+        _min_delta = min_delta;
 
         for (uint32_t i = 0; i < _num_mini_blocks; ++i) {
             if (!_decoder.GetAligned<uint8_t>(1, _delta_bit_widths.data() + i)) {
@@ -188,11 +190,12 @@ public:
         if (!_decoder.GetVlqInt(&_values_remaining)) {
             throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED header");
         }
-        if (!_decoder.GetZigZagVlqInt(&_last_value)) {
+        int64_t first_value;
+        if (!_decoder.GetZigZagVlqInt(&first_value)) {
             throw parquet_exception("Unexpected end of DELTA_BINARY_PACKED header");
         }
-
-        if (_delta_bit_widths.size() < static_cast<uint32_t>(_num_mini_blocks)) {
+        _last_value = first_value;
+        if (_delta_bit_widths.size() < _num_mini_blocks) {
             _delta_bit_widths = buffer(_num_mini_blocks);
         }
 
@@ -224,12 +227,12 @@ public:
             }
             // TODO: an optimized implementation would decode the entire
             // miniblock at once.
-            int64_t delta;
+            uint64_t delta;
             if (!_decoder.GetValue(_delta_bit_width, &delta)) {
                 throw parquet_exception("Unexpected end of data in DELTA_BINARY_PACKED");
             }
             delta += _min_delta;
-            _last_value += static_cast<int32_t>(delta);
+            _last_value += delta;
             --_values_current_mini_block;
         }
         return i;
@@ -237,7 +240,7 @@ public:
 
     void eat_final_padding() {
         while (_values_current_mini_block > 0) {
-            int64_t unused_delta;
+            uint64_t unused_delta;
             if (!_decoder.GetValue(_delta_bit_width, &unused_delta)) {
                 throw parquet_exception("Unexpected end of data in DELTA_BINARY_PACKED");
             }
@@ -573,7 +576,7 @@ void value_decoder<ParquetType>::reset(bytes_view buf, format::Encoding::type en
             if constexpr (ParquetType == format::Type::FLOAT || ParquetType == format::Type::DOUBLE) {
                 _decoder = std::make_unique<byte_stream_split_decoder<ParquetType>>();
             } else {
-                throw parquet_exception::corrupted_file("DELTA_BYTE_ARRAY is valid only for FLOAT and DOUBLE");
+                throw parquet_exception::corrupted_file("BYTE_STREAM_SPLIT is valid only for FLOAT and DOUBLE");
             }
             break;
         default:
@@ -842,6 +845,157 @@ public:
 };
 
 template <format::Type::type ParquetType>
+struct arithmetic_type;
+
+template <>
+struct arithmetic_type<format::Type::INT32> {
+    using signed_type = int32_t;
+    using unsigned_type = uint32_t;
+};
+
+template <>
+struct arithmetic_type<format::Type::INT64> {
+    using signed_type = int64_t;
+    using unsigned_type = uint64_t;
+};
+
+template <format::Type::type ParquetType>
+class delta_binary_packed_encoder : public value_encoder<ParquetType> {
+    static_assert(ParquetType == format::Type::INT32 || ParquetType == format::Type::INT64);
+public:
+    using typename value_encoder<ParquetType>::input_type;
+    using typename value_encoder<ParquetType>::flush_result;
+    using signed_type = typename arithmetic_type<ParquetType>::signed_type;
+    using unsigned_type = typename arithmetic_type<ParquetType>::unsigned_type;
+private:
+    static constexpr size_t BLOCK_VALUES = 256;
+    static constexpr size_t MINIBLOCKS_PER_BLOCK = 8;
+    static constexpr size_t VALUES_PER_MINIBLOCK = BLOCK_VALUES / MINIBLOCKS_PER_BLOCK;
+    static constexpr size_t MAX_VLQ_BYTES
+            = (ParquetType == format::Type::INT32)
+            ? 5
+            : 10;
+    size_t _total_values = 0;
+    signed_type _first_value = 0;
+    signed_type _last_value = 0;
+    std::vector<signed_type> _unencoded_values;
+    bytes _encoded_buffer;
+private:
+    void flush_block() {
+        if (_unencoded_values.empty()) {
+            return;
+        }
+
+        unsigned_type deltas[BLOCK_VALUES];
+        unsigned_type max_deltas[MINIBLOCKS_PER_BLOCK] = {};
+        unsigned_type bit_widths[MINIBLOCKS_PER_BLOCK] = {};
+
+        for (size_t i = 0; i < _unencoded_values.size(); ++i) {
+            deltas[i]
+                    = static_cast<unsigned_type>(_unencoded_values[i])
+                    - static_cast<unsigned_type>(_last_value);
+            _last_value = _unencoded_values[i];
+        }
+
+        signed_type min_delta = deltas[0];
+        for (size_t i = 0; i < _unencoded_values.size(); ++i) {
+            // Implementation-defined behaviour!
+            min_delta = std::min(min_delta, static_cast<signed_type>(deltas[i]));
+        }
+        for (size_t i = 0; i < _unencoded_values.size(); ++i) {
+            deltas[i] = deltas[i] - static_cast<unsigned_type>(min_delta);
+        }
+        for (size_t i = 0; i < _unencoded_values.size(); ++i) {
+            size_t miniblock = i / VALUES_PER_MINIBLOCK;
+            max_deltas[miniblock] = std::max(max_deltas[miniblock], deltas[i]);
+        }
+        for (size_t mb = 0; mb < MINIBLOCKS_PER_BLOCK; ++mb) {
+            bit_widths[mb] = bit_width(max_deltas[mb]);
+        }
+
+        size_t old_data_size = _encoded_buffer.size();
+        size_t max_new_data_size = max_current_block_size();
+        _encoded_buffer.resize(old_data_size + max_new_data_size);
+        BitUtil::BitWriter _data_writer(
+                &_encoded_buffer[old_data_size], max_new_data_size);
+
+        _data_writer.PutZigZagVlqInt(min_delta);
+        for (size_t mb = 0; mb < MINIBLOCKS_PER_BLOCK; ++mb) {
+            _data_writer.PutAligned(bit_widths[mb], 1);
+        }
+        for (size_t mb = 0; mb < MINIBLOCKS_PER_BLOCK; ++mb) {
+            size_t start_idx = mb * VALUES_PER_MINIBLOCK;
+            size_t end_idx = (mb + 1) * VALUES_PER_MINIBLOCK;
+            if (start_idx >= _unencoded_values.size()) {
+                break;
+            }
+            for (size_t i = start_idx; i < end_idx; ++i) {
+                _data_writer.PutValue(deltas[i], bit_widths[mb]);
+            }
+        }
+
+        _data_writer.Flush();
+        _unencoded_values.clear();
+        _encoded_buffer.resize(old_data_size + _data_writer.bytes_written());
+    }
+    size_t max_current_block_size() const {
+        size_t current_num_of_miniblocks
+                = (_unencoded_values.size() + VALUES_PER_MINIBLOCK - 1)
+                / VALUES_PER_MINIBLOCK;
+        return MAX_VLQ_BYTES
+                + MINIBLOCKS_PER_BLOCK
+                + sizeof(input_type) * VALUES_PER_MINIBLOCK * current_num_of_miniblocks;
+    }
+public:
+    void put_batch(const input_type data[], size_t size) override {
+        if (size == 0) {
+            return;
+        }
+
+        size_t i = 0;
+        if (__builtin_expect(_total_values == 0, false)) {
+            _first_value = data[0];
+            _last_value = _first_value;
+            i = 1;
+        }
+
+        for (; i < size; ++i) {
+            _unencoded_values.push_back(data[i]);
+            if (_unencoded_values.size() == BLOCK_VALUES) {
+                flush_block();
+            }
+        }
+
+        _total_values += size;
+    }
+    size_t max_encoded_size() const override {
+        constexpr size_t MAX_HEADER_SIZE = MAX_VLQ_BYTES * 4;
+        return MAX_HEADER_SIZE + _encoded_buffer.size() + max_current_block_size();
+    }
+    flush_result flush(byte sink[]) override {
+        flush_block();
+        BitUtil::BitWriter header_writer(sink, max_encoded_size());
+        header_writer.PutVlqInt(BLOCK_VALUES);
+        header_writer.PutVlqInt(MINIBLOCKS_PER_BLOCK);
+        header_writer.PutVlqInt(_total_values);
+        header_writer.PutZigZagVlqInt(_first_value);
+        header_writer.Flush();
+
+        byte* data_pos = sink + header_writer.bytes_written();
+        std::copy(_encoded_buffer.begin(), _encoded_buffer.end(), data_pos);
+        _total_values = 0;
+        _first_value = 0;
+        _last_value = 0;
+        size_t encoder_buffer_size = _encoded_buffer.size();
+        _encoded_buffer.clear();
+        return {
+            encoder_buffer_size + header_writer.bytes_written(),
+            format::Encoding::DELTA_BINARY_PACKED
+        };
+    }
+};
+
+template <format::Type::type ParquetType>
 std::unique_ptr<value_encoder<ParquetType>>
 make_value_encoder(format::Encoding::type encoding) {
     if constexpr (ParquetType == format::Type::INT96) {
@@ -869,10 +1023,10 @@ make_value_encoder(format::Encoding::type encoding) {
         throw invalid();
     } else if (encoding == format::Encoding::DELTA_BINARY_PACKED) {
         if constexpr (ParquetType == format::Type::INT32) {
-            throw not_implemented();
+            return std::make_unique<delta_binary_packed_encoder<ParquetType>>();
         }
         if constexpr (ParquetType == format::Type::INT64) {
-            throw not_implemented();
+            return std::make_unique<delta_binary_packed_encoder<ParquetType>>();
         }
         throw invalid();
     } else if (encoding == format::Encoding::DELTA_LENGTH_BYTE_ARRAY) {

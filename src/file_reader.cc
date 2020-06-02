@@ -136,7 +136,7 @@ file_reader::open_column_chunk_reader_internal(uint32_t row_group, uint32_t colu
                 return seastar::make_ready_future<std::unique_ptr<format::ColumnMetaData>>(
                         std::make_unique<format::ColumnMetaData>(column_chunk.meta_data));
             } else {
-                return read_chunk_metadata(seastar::make_file_input_stream(f, column_chunk.file_offset));
+                return read_chunk_metadata(seastar::make_file_input_stream(f, column_chunk.file_offset, {8192, 16}));
             }
         }().then([f, &leaf] (std::unique_ptr<format::ColumnMetaData> column_metadata) {
             size_t file_offset = column_metadata->__isset.dictionary_page_offset
@@ -144,7 +144,7 @@ file_reader::open_column_chunk_reader_internal(uint32_t row_group, uint32_t colu
                                  : column_metadata->data_page_offset;
 
             return column_chunk_reader<T>{
-                    page_reader{seastar::make_file_input_stream(f, file_offset, column_metadata->total_compressed_size)},
+                    page_reader{seastar::make_file_input_stream(f, file_offset, column_metadata->total_compressed_size, {8192, 16})},
                     column_metadata->codec,
                     leaf.def_level,
                     leaf.rep_level,

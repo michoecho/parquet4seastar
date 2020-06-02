@@ -25,8 +25,9 @@
 #include <boost/test/included/unit_test.hpp>
 #include <vector>
 #include <array>
+#include <limits>
 
-BOOST_AUTO_TEST_CASE(happy) {
+BOOST_AUTO_TEST_CASE(decoding) {
     using namespace parquet4seastar;
     auto decoder = value_decoder<format::Type::INT32>({});
 
@@ -86,4 +87,102 @@ BOOST_AUTO_TEST_CASE(happy) {
     BOOST_CHECK_EQUAL_COLLECTIONS(
             std::begin(out), std::end(out),
             std::begin(expected), std::end(expected));
+}
+
+BOOST_AUTO_TEST_CASE(encoding32) {
+    using namespace parquet4seastar;
+    auto encoder = make_value_encoder<format::Type::INT32>(format::Encoding::DELTA_BINARY_PACKED);
+    auto decoder = value_decoder<format::Type::INT32>({});
+
+    for (int repeat = 0; repeat < 3; ++repeat) {
+        std::vector<int32_t> input;
+        for (size_t i = 0; i < 1337; ++i) {
+            input.push_back(i);
+        }
+        input.push_back(std::numeric_limits<int32_t>::min());
+        input.push_back(std::numeric_limits<int32_t>::max());
+        input.push_back(std::numeric_limits<int32_t>::min());
+        input.push_back(std::numeric_limits<int32_t>::max());
+        for (int32_t i = 0; i < 420; ++i) {
+            input.push_back(i * i);
+        }
+        size_t size1 = std::size(input) / 3;
+        encoder->put_batch(std::data(input), size1);
+        encoder->put_batch(std::data(input) + size1, std::size(input) - size1);
+
+        bytes encoded(encoder->max_encoded_size(), 0);
+        auto [n_written, encoding] = encoder->flush(encoded.data());
+        encoded.resize(n_written);
+
+        decoder.reset(encoded, format::Encoding::DELTA_BINARY_PACKED);
+        std::vector<int32_t> decoded(input.size());
+        size_t n_read = decoder.read_batch(decoded.size(), decoded.data());
+        decoded.resize(n_read);
+
+        BOOST_CHECK_EQUAL_COLLECTIONS(
+                std::begin(decoded), std::end(decoded),
+                std::begin(input), std::end(input));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(encoding64) {
+    using namespace parquet4seastar;
+    auto encoder = make_value_encoder<format::Type::INT64>(format::Encoding::DELTA_BINARY_PACKED);
+    auto decoder = value_decoder<format::Type::INT64>({});
+
+    for (int repeat = 0; repeat < 3; ++repeat) {
+        std::vector<int64_t> input;
+        for (size_t i = 0; i < 1337; ++i) {
+            input.push_back(i);
+        }
+        input.push_back(std::numeric_limits<int64_t>::min());
+        input.push_back(std::numeric_limits<int64_t>::max());
+        input.push_back(std::numeric_limits<int64_t>::min());
+        input.push_back(std::numeric_limits<int64_t>::max());
+        for (int64_t i = -420; i < 420; ++i) {
+            input.push_back(i * i);
+        }
+        size_t size1 = std::size(input) / 3;
+        encoder->put_batch(std::data(input), size1);
+        encoder->put_batch(std::data(input) + size1, std::size(input) - size1);
+
+        bytes encoded(encoder->max_encoded_size(), 0);
+        auto [n_written, encoding] = encoder->flush(encoded.data());
+        encoded.resize(n_written);
+
+        decoder.reset(encoded, format::Encoding::DELTA_BINARY_PACKED);
+        std::vector<int64_t> decoded(input.size());
+        size_t n_read = decoder.read_batch(decoded.size(), decoded.data());
+        decoded.resize(n_read);
+
+        BOOST_CHECK_EQUAL_COLLECTIONS(
+                std::begin(decoded), std::end(decoded),
+                std::begin(input), std::end(input));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(encoding64_empty) {
+    using namespace parquet4seastar;
+    auto encoder = make_value_encoder<format::Type::INT64>(format::Encoding::DELTA_BINARY_PACKED);
+    auto decoder = value_decoder<format::Type::INT64>({});
+
+    for (int repeat = 0; repeat < 3; ++repeat) {
+        std::vector<int64_t> input;
+        size_t size1 = std::size(input) / 3;
+        encoder->put_batch(std::data(input), size1);
+        encoder->put_batch(std::data(input) + size1, std::size(input) - size1);
+
+        bytes encoded(encoder->max_encoded_size(), 0);
+        auto [n_written, encoding] = encoder->flush(encoded.data());
+        encoded.resize(n_written);
+
+        decoder.reset(encoded, format::Encoding::DELTA_BINARY_PACKED);
+        std::vector<int64_t> decoded(input.size());
+        size_t n_read = decoder.read_batch(decoded.size(), decoded.data());
+        decoded.resize(n_read);
+
+        BOOST_CHECK_EQUAL_COLLECTIONS(
+                std::begin(decoded), std::end(decoded),
+                std::begin(input), std::end(input));
+    }
 }

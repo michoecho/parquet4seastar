@@ -133,5 +133,6 @@ export(EXPORT parquet4seastar-targets
 export(PACKAGE parquet4seastar)
 
 enable_testing ()
+add_subdirectory (examples)
 add_subdirectory (tests)
 add_subdirectory (apps)
