@@ -1,8 +1,0 @@
-*.report
-*.perf
-FlameGraph
-arrow
-pq
-time
-svg
-stalls

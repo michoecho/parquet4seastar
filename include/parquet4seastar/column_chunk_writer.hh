@@ -72,6 +72,23 @@ public:
         , _def_level{def_level}
         {}
 
+    template <typename LevelT>
+    void put_batch(size_t count, LevelT def[], LevelT rep[], input_type val[]) {
+        if (_rep_level > 0) {
+            _rep_encoder.put_batch(rep, count);
+        }
+        if (_def_level > 0) {
+            _def_encoder.put_batch(def, count);
+        }
+
+        size_t value_count = _def_level == 0 ? count : std::count(def, def + count, 0);
+        _val_encoder->put_batch(val, value_count);
+
+        size_t row_count = _rep_level == 0 ? count : std::count(rep, rep + count, 0);
+        _rows_written += row_count;
+        _levels_in_current_page += count;
+    }
+
     void put(uint32_t def_level, uint32_t rep_level, input_type val) {
         if (_rep_level > 0) {
             _rep_encoder.put(rep_level);

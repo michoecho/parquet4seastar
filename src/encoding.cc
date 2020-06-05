@@ -480,31 +480,29 @@ void dict_decoder<ParquetType>::reset(bytes_view data) {
 
 template <format::Type::type ParquetType>
 size_t dict_decoder<ParquetType>::read_batch(size_t n, output_type out[]) {
-    std::array<uint32_t, 1000> buf;
+    uint32_t buf[256];
     size_t completed = 0;
     while (completed < n) {
-        size_t n_to_read = std::min(n - completed, buf.size());
-        size_t n_read = _rle_decoder.GetBatch(buf.data(), n_to_read);
+        size_t n_to_read = std::min(n - completed, std::size(buf));
+        size_t n_read = _rle_decoder.GetBatch(std::data(buf), n_to_read);
         for (size_t i = 0; i < n_read; ++i) {
             if (buf[i] > _dict_size) {
                 throw parquet_exception::corrupted_file(seastar::format(
                         "Dict index exceeds dict size (dict size = {}, index = {})", _dict_size, buf[i]));
             }
-        }
-        for (size_t i = 0; i < n_read; ++i) {
             if constexpr (std::is_trivially_copyable_v<output_type>) {
-                out[completed + i] = _dict[buf[i]];
+                out[completed] = _dict[buf[i]];
             } else {
                 // Why isn't seastar::temporary_buffer copyable though?
-                out[completed + i] = _dict[buf[i]].share();
+                out[completed] = _dict[buf[i]].share();
             }
+            ++completed;
         }
-        completed += n_read;
         if (n_read < n_to_read) {
-            return completed;
+            break;
         }
     }
-    return n;
+    return completed;
 }
 
 void rle_decoder_boolean::reset(bytes_view data) {

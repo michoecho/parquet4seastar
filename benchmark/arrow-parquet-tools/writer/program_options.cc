@@ -42,9 +42,9 @@ void parse_args(int argc, char **argv) {
           "data page size")
       ("rowgroups", po::value<uint64_t>(&g_config.row_groups)->default_value(3),
           "number of row groups")
-      ("compression", po::value<std::string>(&compression_name)->default_value("UNCOMPRESSED"),
+      ("compression", po::value<std::string>(&compression_name)->default_value("uncompressed"),
           "compression type")
-      ("filetype", po::value<std::string>(&file_type)->default_value("NUMERICAL"),
+      ("filetype", po::value<std::string>(&file_type)->default_value("int32"),
           "type of generated file's contents")
       ("plain", po::value<bool>(&g_config.plain)->default_value(false), "don't use dictionary encoding")
       ("string", po::value<uint64_t>(&g_config.string_length)->default_value(12), "String length")
@@ -62,14 +62,12 @@ void parse_args(int argc, char **argv) {
 
   po::notify(vm);
 
-  if (boost::iequals(file_type, "mixed")) {
-      g_config.filetype = FileType::mixed;
-  } else if (boost::iequals(file_type, "nested")) {
-      g_config.filetype = FileType::nested;
-  } else if (boost::iequals(file_type, "strings")) {
-      g_config.filetype = FileType::strings;
-  } else {
-      g_config.filetype = FileType::numerical;
+  if (boost::iequals(file_type, "int32")) {
+      g_config.filetype = FileType::int32;
+  } else if (boost::iequals(file_type, "int64")) {
+      g_config.filetype = FileType::int64;
+  } else if (boost::iequals(file_type, "string")) {
+      g_config.filetype = FileType::string;
   }
 
   if (boost::iequals(compression_name, "snappy")) {

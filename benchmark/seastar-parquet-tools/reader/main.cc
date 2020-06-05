@@ -29,16 +29,13 @@
 #include <boost/iterator/counting_iterator.hpp>
 
 namespace bpo = boost::program_options;
-
 using namespace parquet4seastar;
-
 constexpr size_t BATCH_SIZE = 1000;
 
 enum class FileType {
-    numerical,
-    mixed,
-    nested,
-    strings
+    int32,
+    int64,
+    string
 };
 
 template<format::Type::type T>
@@ -49,18 +46,10 @@ void readColumn(file_reader &fr, int row, int column) {
     OutputType values[BATCH_SIZE];
     int16_t def_levels[BATCH_SIZE];
     int16_t rep_levels[BATCH_SIZE];
-    while (int64_t rows_read = column_reader.read_batch(BATCH_SIZE, def_levels, rep_levels, (OutputType *) values).get0()) { ;
+    while (column_reader.read_batch(BATCH_SIZE, def_levels, rep_levels, values).get0()) {
+        // nothing
     }
 }
-
-template void readColumn<format::Type::BOOLEAN>(file_reader &fr, int row, int column);
-template void readColumn<format::Type::INT32>(file_reader &fr, int row, int column);
-template void readColumn<format::Type::INT64>(file_reader &fr, int row, int column);
-template void readColumn<format::Type::INT96>(file_reader &fr, int row, int column);
-template void readColumn<format::Type::FLOAT>(file_reader &fr, int row, int column);
-template void readColumn<format::Type::DOUBLE>(file_reader &fr, int row, int column);
-template void readColumn<format::Type::BYTE_ARRAY>(file_reader &fr, int row, int column);
-template void readColumn<format::Type::FIXED_LEN_BYTE_ARRAY>(file_reader &fr, int row, int column);
 
 int main(int argc, char *argv[]) {
     seastar::app_template app;
@@ -72,14 +61,12 @@ int main(int argc, char *argv[]) {
         auto &&config = app.configuration();
 
         FileType file_type;
-        if (boost::iequals(config["filetype"].as<std::string>(), "strings")) {
-            file_type = FileType::strings;
-        } else if (boost::iequals(config["filetype"].as<std::string>(), "mixed")) {
-            file_type = FileType::mixed;
-        } else if (boost::iequals(config["filetype"].as<std::string>(), "nested")) {
-            file_type = FileType::nested;
-        } else {
-            file_type = FileType::numerical;
+        if (boost::iequals(config["filetype"].as<std::string>(), "int32")) {
+            file_type = FileType::int32;
+        } else if (boost::iequals(config["filetype"].as<std::string>(), "int64")) {
+            file_type = FileType::int64;
+        } else if (boost::iequals(config["filetype"].as<std::string>(), "string")) {
+            file_type = FileType::string;
         }
 
         std::string file = config["filename"].as<std::string>();
@@ -89,27 +76,14 @@ int main(int argc, char *argv[]) {
 
             for (int r = 0; r < num_row_groups; r++) {
                 switch (file_type) {
-                    case FileType::strings:
+                    case FileType::string:
                         readColumn<format::Type::BYTE_ARRAY>(fr, r, 0);
                         break;
-                    case FileType::mixed:
-                        readColumn<format::Type::BOOLEAN>(fr, r, 0);
-                        readColumn<format::Type::INT32>(fr, r, 1);
-                        readColumn<format::Type::INT64>(fr, r, 2);
-                        readColumn<format::Type::FIXED_LEN_BYTE_ARRAY>(fr, r, 3);
-                        break;
-                    case FileType::nested:
-                        readColumn<format::Type::INT64>(fr, r, 0);
-                        readColumn<format::Type::INT64>(fr, r, 1);
-                        readColumn<format::Type::INT64>(fr, r, 2);
-                        readColumn<format::Type::BYTE_ARRAY>(fr, r, 3);
-                        readColumn<format::Type::BYTE_ARRAY>(fr, r, 4);
-                        readColumn<format::Type::BYTE_ARRAY>(fr, r, 5);
-                        break;
-                    case FileType::numerical:
+                    case FileType::int32:
                         readColumn<format::Type::INT32>(fr, r, 0);
-                        readColumn<format::Type::INT32>(fr, r, 1);
-                        readColumn<format::Type::INT64>(fr, r, 2);
+                        break;
+                    case FileType::int64:
+                        readColumn<format::Type::INT64>(fr, r, 0);
                         break;
                 }
             }

@@ -50,6 +50,17 @@ seastar::future<std::optional<page>> page_reader::next_page() {
 }
 
 template<format::Type::type T>
+bytes_view column_chunk_reader<T>::decompress(bytes_view compressed, size_t uncompressed_size) {
+    if (_decompressor->type() == format::CompressionCodec::UNCOMPRESSED) {
+        return compressed;
+    } else {
+        _decompression_buffer.resize(uncompressed_size);
+        _decompression_buffer = _decompressor->decompress(compressed, std::move(_decompression_buffer));
+        return _decompression_buffer;
+    }
+}
+
+template<format::Type::type T>
 void column_chunk_reader<T>::load_data_page(page p) {
     if (!p.header->__isset.data_page_header) {
         throw parquet_exception::corrupted_file(seastar::format(
@@ -65,9 +76,7 @@ void column_chunk_reader<T>::load_data_page(page p) {
                 "Negative uncompressed_page_size in header: {}", *p.header));
     }
 
-    _decompression_buffer.resize(p.header->uncompressed_page_size);
-    _decompression_buffer = _decompressor->decompress(p.contents, std::move(_decompression_buffer));
-    bytes_view contents = _decompression_buffer;
+    bytes_view contents = decompress(p.contents, p.header->uncompressed_page_size);
 
     size_t n_read = 0;
     n_read = _rep_decoder.reset_v1(contents, header.repetition_level_encoding, header.num_values);
@@ -104,10 +113,9 @@ void column_chunk_reader<T>::load_data_page_v2(page p) {
     if (header.__isset.is_compressed && header.is_compressed) {
         size_t n_read = header.repetition_levels_byte_length + header.definition_levels_byte_length;
         size_t uncompressed_values_size = static_cast<size_t>(p.header->uncompressed_page_size) - n_read;
-        _decompression_buffer.resize(uncompressed_values_size);
-        _decompression_buffer = _decompressor->decompress(contents, std::move(_decompression_buffer));
+        contents = decompress(contents, uncompressed_values_size);
     }
-    _val_decoder.reset(_decompression_buffer, header.encoding);
+    _val_decoder.reset(contents, header.encoding);
 }
 
 template<format::Type::type T>
@@ -125,10 +133,9 @@ void column_chunk_reader<T>::load_dictionary_page(page p) {
                 seastar::format("Negative uncompressed_page_size in header: {}", *p.header));
     }
     _dict = std::vector<output_type>(header.num_values);
-    _decompression_buffer.resize(p.header->uncompressed_page_size);
-    _decompression_buffer = _decompressor->decompress(p.contents, std::move(_decompression_buffer));
+    bytes_view contents = decompress(p.contents, p.header->uncompressed_page_size);
     value_decoder<T> vd{_type_length};
-    vd.reset(_decompression_buffer, format::Encoding::PLAIN);
+    vd.reset(contents, format::Encoding::PLAIN);
     size_t n_read = vd.read_batch(_dict->size(), _dict->data());
     if (n_read < _dict->size()) {
         throw parquet_exception::corrupted_file(seastar::format(

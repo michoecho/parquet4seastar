@@ -1,3 +1,4 @@
+#!/usr/bin/bash
 # This file is open source software, licensed to you under the terms
 # of the Apache License, Version 2.0 (the "License").  See the NOTICE file
 # distributed with this work for additional information regarding copyright
@@ -21,57 +22,42 @@
 
 #!/usr/bin/bash
 
-#environment variables expected to be set:
-export DATA_DIR
-export FLAMEGRAPH_DIR
-export ARROW_READER
-export SEASTAR_READER
+set -e
 
-declare -A name_type_map
+SEASTAR_READER=seastar-parquet-tools/build/parquet-reader
+ARROW_READER=arrow-parquet-tools/build/parquet-reader
 
-name_type_map[numerical]=numerical
-name_type_map[mixed]=mixed
-name_type_map[nested]=nested
-name_type_map[strings]=strings
-name_type_map[numerical_snappy]=strings
-name_type_map[numerical_gzip]=strings
+function drop_cache {
+	echo 3 | sudo tee -a /proc/sys/vm/drop_caches 1>/dev/null
+}
 
-for name in "${!name_type_map[@]}"
-do
-	for kind in arrow seastar
-	do
-		for compression in uncompressed snappy gzip
-		do
-			for plainness in plain dict
-			do
-				export filename="${name}.${kind}.${plainness}.${compression}"
-				if [ ! -f ${DATA_DIR}/${filename}.parquet ]; then
-				    continue
-				fi
+export TIMEFORMAT=%R
 
-				(echo 3 | sudo tee -a /proc/sys/vm/dropfile_caches) 1>/dev/null 2>/dev/null
-				time ( perf record --call-graph dwarf -o reader-arrow-${filename}.perf \
-					${ARROW_READER} --filename ${DATA_DIR}/${filename}.parquet --filetype ${name_type_map[${name}]} \
-					1>/dev/null 2>/dev/null \
-				) 2>time/reader-arrow-${filename}.time
-				(perf script -i reader-arrow-${filename}.perf | ${FLAMEGRAPH_DIR}/stackcollapse-perf.pl | ${FLAMEGRAPH_DIR}/flamegraph.pl > svg/reader-arrow-${filename}.svg) 1>/dev/null 2>/dev/null
-				rm -f reader-arrow-${filename}.perf
+declare -A CASES
 
-				(echo 3 | sudo tee -a /proc/sys/vm/drop_caches) 1>/dev/null 2>/dev/null
-				time ( perf record --call-graph dwarf -o reader-seastar-${filename}.perf \
-					${SEASTAR_READER} -c1 --filename ${DATA_DIR}/${filename}.parquet --filetype ${name_type_map[${name}]} \
-					--blocked-reactor-notify-ms 1 --blocked-reactor-reports-per-minute 1000 2>stalls/reader-seastar-${filename}.stalls 1>/dev/null \
-				) 2>time/reader-seastar-${filename}.time
-				(perf script -i reader-seastar-${filename}.perf | ${FLAMEGRAPH_DIR}/stackcollapse-perf.pl | ${FLAMEGRAPH_DIR}/flamegraph.pl > svg/reader-seastar-${filename}.svg)  1>/dev/null 2>/dev/null
-				rm reader-seastar-${filename}.perf
+CASES[int32_plain_uncompressed]=int32
+CASES[int32_plain_snappy]=int32
+CASES[int32_dict_uncompressed]=int32
+CASES[int32_dict_snappy]=int32
+CASES[int64_plain_uncompressed]=int64
+CASES[int64_plain_snappy]=int64
+CASES[int64_dict_uncompressed]=int64
+CASES[int64_dict_snappy]=int64
+CASES[string8_plain_uncompressed]=string
+CASES[string8_plain_snappy]=string
+CASES[string8_dict_uncompressed]=string
+CASES[string8_dict_snappy]=string
+CASES[string80_plain_uncompressed]=string
+CASES[string80_plain_snappy]=string
+CASES[string80_dict_uncompressed]=string
+CASES[string80_dict_snappy]=string
 
-				echo ${filename}:
-				echo "--------------------------------------------------------------------------------"
-				echo arrow reader time: $(cat time/reader-arrow-${filename}.time)
-				echo seastar reader time: $(cat time/reader-seastar-${filename}.time)
-				sed '0,/\[/!d' stalls/reader-seastar-${filename}.stalls  | head --lines=-1
-				echo "================================================================================"
-			done
-		done
+for CASE in ${!CASES[@]}; do
+	echo $CASE
+	FILENAME=pq/$CASE.parquet
+	FILETYPE="${CASES[$CASE]}"
+	for READER in $ARROW_READER $SEASTAR_READER; do
+		drop_cache
+		time ${READER} --filetype $FILETYPE --filename $FILENAME
 	done
 done

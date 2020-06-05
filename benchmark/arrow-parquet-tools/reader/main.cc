@@ -53,30 +53,16 @@ void iterateColumn(std::shared_ptr<parquet::ColumnReader> column_reader){
     }
 }
 
-void iterateMixed(std::shared_ptr<parquet::RowGroupReader> row_group_reader) {
-    iterateColumn<BoolReader, bool>(row_group_reader->Column(0));
-    iterateColumn<Int32Reader, int32_t>(row_group_reader->Column(1));
-    iterateColumn<Int64Reader, int64_t>(row_group_reader->Column(2));
-    iterateColumn<FixedLenByteArrayReader, FixedLenByteArray>(row_group_reader->Column(3));
-}
-
-void iterateNested(std::shared_ptr<parquet::RowGroupReader> row_group_reader) {
-    iterateColumn<Int64Reader, int64_t>(row_group_reader->Column(0));
-    iterateColumn<Int64Reader, int64_t>(row_group_reader->Column(1));
-    iterateColumn<Int64Reader, int64_t>(row_group_reader->Column(2));
-    iterateColumn<ByteArrayReader, ByteArray>(row_group_reader->Column(3));
-    iterateColumn<ByteArrayReader, ByteArray>(row_group_reader->Column(4));
-    iterateColumn<ByteArrayReader, ByteArray>(row_group_reader->Column(5));
-}
-
 void iterateStrings(std::shared_ptr<parquet::RowGroupReader> row_group_reader) {
     iterateColumn<ByteArrayReader, ByteArray>(row_group_reader->Column(0));
 }
 
-void iterateNumerical(std::shared_ptr<parquet::RowGroupReader> row_group_reader) {
+void iterateInt32(std::shared_ptr<parquet::RowGroupReader> row_group_reader) {
     iterateColumn<Int32Reader, int32_t>(row_group_reader->Column(0));
-    iterateColumn<Int32Reader, int32_t>(row_group_reader->Column(1));
-    iterateColumn<Int64Reader, int64_t>(row_group_reader->Column(2));
+}
+
+void iterateInt64(std::shared_ptr<parquet::RowGroupReader> row_group_reader) {
+    iterateColumn<Int64Reader, int64_t>(row_group_reader->Column(0));
 }
 
 int main(int argc, char *argv[]) {
@@ -89,20 +75,16 @@ int main(int argc, char *argv[]) {
     int num_row_groups = file_metadata->num_row_groups();
 
     for (int r = 0; r < num_row_groups; ++r) {
-        std::shared_ptr<parquet::RowGroupReader> row_group_reader =
-                parquet_reader->RowGroup(r);
+        std::shared_ptr<parquet::RowGroupReader> row_group_reader = parquet_reader->RowGroup(r);
 
         switch (r_config.filetype) {
-            case FileType::numerical:
-                iterateNumerical(row_group_reader);
+            case FileType::int32:
+                iterateInt32(row_group_reader);
                 break;
-            case FileType::mixed:
-                iterateMixed(row_group_reader);
+            case FileType::int64:
+                iterateInt64(row_group_reader);
                 break;
-            case FileType::nested:
-                iterateNested(row_group_reader);
-                break;
-            case FileType::strings:
+            case FileType::string:
                 iterateStrings(row_group_reader);
                 break;
         }

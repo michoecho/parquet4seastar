@@ -1,3 +1,9 @@
 [submodule "tests/test_data/parquet-testing"]
 	path = tests/test_data/parquet-testing
 	url = https://github.com/apache/parquet-testing
+[submodule "benchmark/FlameGraph"]
+	path = benchmark/FlameGraph
+	url = https://github.com/brendangregg/FlameGraph.git
+[submodule "benchmark/arrow"]
+	path = benchmark/arrow
+	url = https://github.com/apache/arrow

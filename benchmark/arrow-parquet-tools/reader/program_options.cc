@@ -52,13 +52,11 @@ void parse_args(int argc, char **argv) {
 
   r_config.use_mmap = vm.count("mmap");
 
-  if (boost::iequals(file_type, "strings")) {
-    r_config.filetype = FileType::strings;
-  } else if (boost::iequals(file_type, "mixed")) {
-    r_config.filetype = FileType::mixed;
-  } else if (boost::iequals(file_type, "nested")) {
-    r_config.filetype = FileType::nested;
+  if (boost::iequals(file_type, "string")) {
+    r_config.filetype = FileType::string;
+  } else if (boost::iequals(file_type, "int32")) {
+    r_config.filetype = FileType::int32;
   } else {
-    r_config.filetype = FileType::numerical;
+    r_config.filetype = FileType::int64;
   }
 }

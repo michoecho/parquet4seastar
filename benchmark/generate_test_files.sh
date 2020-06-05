@@ -23,10 +23,12 @@
 
 set -e
 
-SEASTAR_WRITER=seastar-parquet-tools/build/parquet-writer
-ARROW_WRITER=arrow-parquet-tools/build/parquet-writer
+WRITER=arrow-parquet-tools/build/parquet-writer
 
-TIMEFORMAT=%R
+if ! command -v arrow-parquet-tools/build/parquet-writer; then
+	echo "Please build arrow-parquet-tools/build/parquet-writer using setup.sh"
+	exit 1
+fi
 
 declare -A CASES
 
@@ -35,7 +37,7 @@ CASES[int32_plain_uncompressed]="
 	--compression uncompressed \
 	--plain true \
 	--rows 4000000 \
-	--rowgroups 20 \
+	--rowgroups 200 \
 	--page 65536"
 
 CASES[int32_plain_snappy]="
@@ -43,7 +45,7 @@ CASES[int32_plain_snappy]="
 	--compression snappy \
 	--plain true \
 	--rows 4000000 \
-	--rowgroups 120 \
+	--rowgroups 1200 \
 	--page 65536"
 
 CASES[int32_dict_uncompressed]="
@@ -51,7 +53,7 @@ CASES[int32_dict_uncompressed]="
 	--compression uncompressed \
 	--plain false \
 	--rows 4000000 \
-	--rowgroups 60 \
+	--rowgroups 600 \
 	--page 65536"
 
 CASES[int32_dict_snappy]="
@@ -59,7 +61,7 @@ CASES[int32_dict_snappy]="
 	--compression snappy \
 	--plain false \
 	--rows 4000000 \
-	--rowgroups 120 \
+	--rowgroups 1200 \
 	--page 65536"
 
 CASES[int64_plain_uncompressed]="
@@ -67,7 +69,7 @@ CASES[int64_plain_uncompressed]="
 	--compression uncompressed \
 	--plain true \
 	--rows 2000000 \
-	--rowgroups 20 \
+	--rowgroups 200 \
 	--page 65536"
 
 CASES[int64_plain_snappy]="
@@ -75,7 +77,7 @@ CASES[int64_plain_snappy]="
 	--compression snappy \
 	--plain true \
 	--rows 2000000 \
-	--rowgroups 120 \
+	--rowgroups 1200 \
 	--page 65536"
 
 CASES[int64_dict_uncompressed]="
@@ -83,7 +85,7 @@ CASES[int64_dict_uncompressed]="
 	--compression uncompressed \
 	--plain false \
 	--rows 2000000 \
-	--rowgroups 120 \
+	--rowgroups 1200 \
 	--page 65536"
 
 CASES[int64_dict_snappy]="
@@ -91,7 +93,7 @@ CASES[int64_dict_snappy]="
 	--compression snappy \
 	--plain false \
 	--rows 2000000 \
-	--rowgroups 240 \
+	--rowgroups 2400 \
 	--page 65536"
 
 CASES[string8_plain_uncompressed]="
@@ -99,7 +101,7 @@ CASES[string8_plain_uncompressed]="
 	--compression uncompressed \
 	--plain true \
 	--rows 10000000 \
-	--rowgroups 2 \
+	--rowgroups 20 \
 	--page 65536 \
 	--string 8"
 
@@ -108,7 +110,7 @@ CASES[string8_plain_snappy]="
 	--compression snappy \
 	--plain true \
 	--rows 10000000 \
-	--rowgroups 20 \
+	--rowgroups 200 \
 	--page 65536 \
 	--string 8"
 
@@ -117,7 +119,7 @@ CASES[string8_dict_uncompressed]="
 	--compression uncompressed \
 	--plain false \
 	--rows 1000000 \
-	--rowgroups 80 \
+	--rowgroups 800 \
 	--page 65536 \
 	--string 8"
 
@@ -126,7 +128,7 @@ CASES[string8_dict_snappy]="
 	--compression snappy \
 	--plain false \
 	--rows 1000000 \
-	--rowgroups 300 \
+	--rowgroups 3000 \
 	--page 65536 \
 	--string 8"
 
@@ -135,7 +137,7 @@ CASES[string80_plain_uncompressed]="
 	--compression uncompressed \
 	--plain true \
 	--rows 1000000 \
-	--rowgroups 4 \
+	--rowgroups 40 \
 	--page 65536 \
 	--string 80"
 
@@ -144,7 +146,7 @@ CASES[string80_plain_snappy]="
 	--compression snappy \
 	--plain true \
 	--rows 1000000 \
-	--rowgroups 20 \
+	--rowgroups 200 \
 	--page 65536 \
 	--string 80"
 
@@ -153,7 +155,7 @@ CASES[string80_dict_uncompressed]="
 	--compression uncompressed \
 	--plain false \
 	--rows 1000000 \
-	--rowgroups 4 \
+	--rowgroups 40 \
 	--page 65536 \
 	--string 80"
 
@@ -162,21 +164,15 @@ CASES[string80_dict_snappy]="
 	--compression snappy \
 	--plain false \
 	--rows 1000000 \
-	--rowgroups 30 \
+	--rowgroups 300 \
 	--page 65536 \
 	--string 80"
 
-mkdir -p writer_tmp
+mkdir -p pq
 for CASE in ${!CASES[@]}; do
 	echo $CASE
-	FILENAME=writer_tmp/$CASE.parquet
+	FILENAME=pq/$CASE.parquet
 	OPTIONS="${CASES[$CASE]}"
-	for WRITER in $ARROW_WRITER $SEASTAR_WRITER; do
-		time (
-			${WRITER} $OPTIONS --filename $FILENAME
-
-			sync $FILENAME
-		)
-		rm $FILENAME
-	done
+	${WRITER} $OPTIONS --filename $FILENAME
+	sync $FILENAME
 done

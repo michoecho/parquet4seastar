@@ -61,11 +61,15 @@ public:
     template <typename T>
     uint32_t read_batch(uint32_t n, T out[]) {
         n = std::min(n, _num_values - _values_read);
+#if 0
         if (_bit_width == 0) {
             std::fill(out, out + n, 0);
+#endif
             _values_read += n;
             return n;
+#if 0
         }
+#endif
         return std::visit(overloaded {
                 [this, n, out] (BitReader& r) {
                     size_t n_read = r.GetBatch(_bit_width, out, n);
@@ -225,9 +229,10 @@ public:
                     static_cast<int>(_bit_width)};
         }
     }
-    void put_batch(const uint64_t data[], size_t size) {
+    template <typename T>
+    void put_batch(const T data[], size_t size) {
         for (size_t i = 0; i < size; ++i) {
-            put(data[i]);
+            put(static_cast<T>(data[i]));
         }
     }
     void clear() {

@@ -27,10 +27,9 @@
 #include <parquet/platform.h>
 
 enum class FileType {
-    numerical,
-    mixed,
-    nested,
-    strings
+    int32,
+    int64,
+    string
 };
 
 struct reader_config {

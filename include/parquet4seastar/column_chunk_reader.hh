@@ -68,6 +68,7 @@ private:
     uint32_t _rep_level;
     std::optional<uint32_t> _type_length;
 private:
+    bytes_view decompress(bytes_view compressed, size_t uncompressed_size);
     seastar::future<> load_next_page();
     void load_dictionary_page(page p);
     void load_data_page(page p);
@@ -121,6 +122,7 @@ column_chunk_reader<T>::read_batch_internal(size_t n, LevelT def[], LevelT rep[]
         _initialized = false;
         return read_batch_internal(n, def, rep, val);
     }
+#if 0
     for (size_t i = 0; i < def_levels_read; ++i) {
         if (def[i] < 0 || def[i] > static_cast<LevelT>(_def_level)) {
             return seastar::make_exception_future<size_t>(parquet_exception::corrupted_file(seastar::format(
@@ -131,12 +133,8 @@ column_chunk_reader<T>::read_batch_internal(size_t n, LevelT def[], LevelT rep[]
                     "Repetition level ({}) out of range (0 to {})", rep[i], _rep_level)));
         }
     }
-    size_t values_to_read = 0;
-    for (size_t i = 0; i < def_levels_read; ++i) {
-        if (def[i] == static_cast<LevelT>(_def_level)) {
-            ++values_to_read;
-        }
-    }
+#endif
+    size_t values_to_read = _def_level == 0 ? def_levels_read : std::count(def, def + def_levels_read, static_cast<LevelT>(_def_level));
     size_t values_read = _val_decoder.read_batch(values_to_read, val);
     if (values_read != values_to_read) {
         return seastar::make_exception_future<size_t>(parquet_exception::corrupted_file(seastar::format(
