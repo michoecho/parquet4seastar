@@ -30,6 +30,7 @@ include(FindPkgConfig)
 find_package(Boost 1.40 COMPONENTS program_options REQUIRED)
 
 include_directories(${ARROW_DIR}/cpp/src)
+include_directories(${ARROW_DIR}/cpp/build/src)
 
 add_executable(parquet-reader reader/main.cc reader/program_options.cc)
 target_link_libraries(parquet-reader ${ARROW_DIR}/cpp/build/release/libparquet.so  ${ARROW_DIR}/cpp/build/release/libarrow.so ${Boost_LIBRARIES})
