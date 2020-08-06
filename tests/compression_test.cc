@@ -60,4 +60,19 @@ BOOST_AUTO_TEST_CASE(compression_snappy) {
     test_compression_overflow(format::CompressionCodec::SNAPPY);
 }
 
+BOOST_AUTO_TEST_CASE(compression_brotli) {
+    test_compression_happy(format::CompressionCodec::BROTLI);
+    test_compression_overflow(format::CompressionCodec::BROTLI);
+}
+
+BOOST_AUTO_TEST_CASE(compression_lz4) {
+    test_compression_happy(format::CompressionCodec::LZ4);
+    test_compression_overflow(format::CompressionCodec::LZ4);
+}
+
+BOOST_AUTO_TEST_CASE(compression_zstd) {
+    test_compression_happy(format::CompressionCodec::ZSTD);
+    test_compression_overflow(format::CompressionCodec::ZSTD);
+}
+
 } // namespace parquet4seastar
